@@ -131,10 +131,23 @@ Or do the steps by hand if you want more control:
 node import.js /tmp/usage-<ts>.jsonl     # prints "Imported N / skipped M / X invalid"
 ```
 
-## Phase 3 — Publish (commit + push)
+## Phase 3 — Publish (commit + contribute)
 
-`log_and_push.sh` already commits (`log: usage snapshot <ts> (<N> total rows)`)
-and pushes to `origin`. If you ran `import.js` by hand:
+`log_and_push.sh` commits (`log: usage snapshot <ts> (<N> total rows)`) and then
+contributes the row back, picking the path automatically based on the user's
+access to `origin`:
+
+- **Direct (has push access).** Commits to `main`, rebases onto any rows other
+  contributors pushed in the meantime (the log is append-only, so this
+  fast-forwards), and pushes.
+- **Pull request (no push access).** This is the default for people who cloned
+  the canonical repo without write access — "joining the federation." The helper
+  forks the repo (via `gh`), pushes a `usage-<login>-<ts>` branch to the fork,
+  and opens a PR upstream, then leaves the user back on a clean `main`. Needs the
+  `gh` CLI authenticated (`gh auth login`); if it's missing the helper says so
+  and stops. Maintainers merge the PR to land the row.
+
+If you ran `import.js` by hand and have write access:
 
 ```bash
 git add data/usage-log.jsonl
@@ -151,7 +164,7 @@ rather than forcing the commit.
 Tell the user, concisely:
 - which orgs were captured and their key numbers (5-hour %, weekly %, spend),
 - how many rows were added vs skipped,
-- the commit hash and that it pushed.
+- whether it pushed directly (commit hash) or opened a PR (the PR URL).
 
 ## Notes
 

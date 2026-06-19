@@ -4,6 +4,39 @@ Log Claude.ai usage limits (5-hour window, weekly all-models, Sonnet-only,
 extra-usage spend) to a local time-series file you can later turn into a
 dashboard or chart. Built to collect from **multiple users / orgs** into one log.
 
+## Join the Federation
+
+The "federation" is the pooled log of usage across many Claude accounts. **Today
+it's just tracking** — a shared time series of how close each user/org is to
+their 5-hour, weekly, and spend limits, visualized in the
+[dashboard](https://urban-us-co.github.io/ts-federation-log/dashboard.html).
+**The vision:** once enough accounts contribute, that shared signal can be used
+to *load-balance token and plan usage across accounts* — route work to whoever
+has headroom instead of hammering one account into a rate limit. We're not doing
+the routing yet; we're building the data that would make it possible.
+
+To join, contribute your own snapshots:
+
+1. **Clone the repo** and install deps (there are none beyond Node):
+   ```bash
+   git clone https://github.com/urban-us-co/ts-federation-log.git
+   cd ts-federation-log
+   ```
+2. **Run the skill.** In Claude Code (with the `log-claude-usage` skill — it
+   lives in `.claude/skills/` so it's available the moment you clone) just ask:
+   *"log my Claude usage"*. It reads your live claude.ai session, anonymizes
+   (hashes UUIDs/emails, scrubs names), appends a row per org, and contributes it.
+3. **How your data lands depends on your access:**
+   - **Write access** → the row is committed and pushed straight to `main`.
+   - **No write access** (the default for new joiners) → the skill forks the
+     repo, pushes a branch to your fork, and opens a **pull request** with your
+     anonymized rows. A maintainer merges it. This needs the
+     [`gh` CLI](https://cli.github.com) authenticated (`gh auth login`).
+
+Only anonymized rows ever leave your machine — raw UUIDs and emails are hashed
+or scrubbed at ingest (see `lib.js`), so the public log carries stable
+`user_id`/`org_id` hashes and display names, never the underlying identifiers.
+
 ## How it works
 
 The numbers shown on `claude.ai` Settings → Usage come from an authenticated
