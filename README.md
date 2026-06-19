@@ -36,11 +36,12 @@ To join, contribute your own snapshots:
      [`gh` CLI](https://cli.github.com) authenticated (`gh auth login`).
 4. **Keep it running — hourly.** A one-off snapshot is a dot; the pool needs a
    continuous signal, so participants contribute **hourly**. On first run the
-   skill offers to schedule it (the recurring prompt and the two local scheduling
-   options — an in-session cron, or an always-on launchd agent — live in the
-   skill's docs). Scheduling is **local** by design: gathering reads your
-   logged-in Chrome, so a headless cloud agent can't do it, and Chrome must be
-   open + logged in to claude.ai when each run fires.
+   skill offers to set this up via Claude Code's **`/schedule`** feature as a
+   recurring hourly task. Scheduled tasks run inside the open app with your
+   connected Chrome available, so they can read your logged-in claude.ai session
+   — just keep the app open and Chrome logged in (a run due while the app is
+   closed happens on next launch). Click **"Run now"** once after creating the
+   task to pre-approve the tools it uses.
 
 **Participation is proportional to contribution:** drawing on the shared pool
 (once routing exists) is gated on contributing a verified, ongoing log. No

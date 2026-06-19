@@ -33,33 +33,29 @@ token/plan usage across accounts. So the expectation for participants is an
 **hourly** contribution. Accounts that don't contribute a verified ongoing log
 don't get to draw on the shared pool — you're in proportion to what you put in.
 
-**On first run, offer to schedule it** (and explain the requirement). The exact
-recurring prompt to schedule is:
+**On first run, offer to schedule it** (and explain the requirement), using
+Claude Code's **`/schedule`** feature (the `scheduled-tasks` tools). Create a
+recurring hourly task — cron `7 * * * *` — with a fully self-contained prompt
+(scheduled runs start fresh with no memory of the setup session). The prompt
+should: read this `SKILL.md` and follow it; gather via the Claude-in-Chrome
+`javascript_tool` (top-level await, slice large payloads); write the raw snapshot
+to a file outside the repo; run `scripts/log_and_push.sh`; and **skip quietly if
+no logged-in claude.ai browser is available** rather than erroring.
 
-> Run the log-claude-usage skill now: capture a Claude.ai usage snapshot from the
-> logged-in Chrome session (one row per org), anonymize via the repo's import.js,
-> and contribute it to the ts-federation-log (direct push if you have write
-> access, otherwise open a pull request from a fork). If no logged-in claude.ai
-> browser session is available, skip this run quietly — do not error out.
+Why `/schedule` and not a headless cron/launchd job: scheduled tasks run **inside
+the open app**, in the same authenticated runtime with the **connected Chrome
+available** — so they can actually read the logged-in claude.ai session. A purely
+headless `claude -p` can't (no host-injected auth → 401), and a *cloud* routine
+has no browser at all.
 
-Two ways to schedule, both **local** (gathering needs the logged-in Chrome, so a
-headless *cloud* agent can't do it):
-
-- **In-session cron** — from a running Claude Code session, schedule the prompt
-  hourly (e.g. cron `7 * * * *`, durable). Fires only while that session is open
-  and Chrome is logged in. (Won't fire if `CLAUDE_CODE_DISABLE_CRON` is set in
-  the environment — true of some app/SDK clients; use a normal terminal session.)
-- **launchd agent (always-on)** — `scripts/com.thirdsphere.federation-log.plist`
-  + `scripts/federation_hourly.sh` run a headless `claude -p` hourly with a
-  **narrow `--allowedTools` allow-list** (Chrome MCP + node/git/gh/bash for the
-  helper), no blanket permission bypass. **Prerequisite:** the `claude` CLI must
-  be independently authenticated for headless use (`claude login`, or an API key
-  in the launchd environment) — a session whose auth is host-injected (no
-  `~/.claude/.credentials.json`) will 401. Install/test commands are in the plist
-  header comment. Dry-run first: `FED_DRYRUN=1 scripts/federation_hourly.sh`.
-
-Either way, **Chrome must be open and logged in to claude.ai at fire time** or the
-run skips.
+Operational notes:
+- **Chrome must be open and logged in to claude.ai when the task fires**, and the
+  app must be open (if it's closed at fire time, the run happens on next launch).
+- After creating the task, have the user click **"Run now"** once from the
+  Scheduled sidebar — that stores the tool approvals (Chrome MCP + the helper's
+  bash) so later hourly runs don't pause on permission prompts.
+- To change cadence or prompt, use `update_scheduled_task` (don't create a
+  duplicate); `list_scheduled_tasks` finds the id.
 
 ## Prerequisites
 
