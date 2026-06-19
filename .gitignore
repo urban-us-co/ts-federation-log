@@ -11,3 +11,7 @@ npm-debug.log*
 
 # OS
 .DS_Store
+
+# Claude Code in-session scheduler state (local, per-machine)
+.claude/scheduled_tasks.json
+.claude/scheduled_tasks.lock
