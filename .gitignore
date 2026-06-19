@@ -1,0 +1,13 @@
+# Personal browser logger snippet (Option A) — local-only, not committed
+usage-logger.js
+usage-logger.bookmarklet.txt
+
+# NOTE: data/usage-log.jsonl is intentionally tracked — the usage log is meant
+# to be shared publicly via this repo.
+
+# Node
+node_modules/
+npm-debug.log*
+
+# OS
+.DS_Store

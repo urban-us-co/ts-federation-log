@@ -1,0 +1,15 @@
+{
+  "name": "ts-federation-log",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Log Claude.ai usage limits over time across multiple users/orgs",
+  "bin": {
+    "ts-federation-collector": "collector.js",
+    "ts-federation-import": "import.js"
+  },
+  "scripts": {
+    "start": "node collector.js",
+    "import": "node import.js"
+  },
+  "license": "UNLICENSED"
+}
