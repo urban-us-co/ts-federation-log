@@ -67,8 +67,20 @@ One JSON object per line — each self-identifies the user and org:
 | `extra_usage_enabled` | whether extra usage is on |
 | `raw` | the full untouched `/usage` payload (future-proofing) |
 
-A future UI can read `data/usage-log.jsonl` (or `GET /log` from the collector)
-and chart utilization over time per user/org.
+## Dashboard
+
+`dashboard.html` is a self-contained (no-dependency) viewer for the log:
+current-state indicator cards per user×org (5-hour / weekly / Sonnet / spend,
+colored by severity) plus an interactive time-series chart with a metric
+selector, per-series toggles, and hover tooltips. Serve the repo so it can
+fetch the tracked log, then open `/dashboard.html`:
+
+```bash
+python3 -m http.server 8801   # then visit http://localhost:8801/dashboard.html
+```
+
+Opened directly via `file://`, `fetch` is blocked — drag a `usage-log.jsonl`
+onto the page (or use the browse link) instead.
 
 ## Files
 
@@ -76,6 +88,7 @@ and chart utilization over time per user/org.
 |------|----------|---------|
 | `collector.js` | yes | local HTTP collector (append to log, serve `/log`) |
 | `import.js` | yes | ingest downloaded snapshots into the log |
+| `dashboard.html` | yes | no-dependency viewer — indicators + time-series chart |
 | `lib.js` | yes | shared flatten / dedupe helpers |
 | `package.json` | yes | `npm start`, `npm run import` |
 | `usage-logger.js` | **no** (gitignored) | the browser snippet |
