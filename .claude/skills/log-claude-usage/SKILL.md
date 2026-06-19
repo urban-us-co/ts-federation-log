@@ -25,6 +25,42 @@ endpoint. We read it straight from the logged-in browser session, normalize and
 anonymize via the repo's `import.js`, and append one row per org to
 `data/usage-log.jsonl`.
 
+## Run it hourly (participation)
+
+The federation is only useful if it's continuous: a single snapshot is a dot, a
+**verified hourly time series** is what lets the pool eventually load-balance
+token/plan usage across accounts. So the expectation for participants is an
+**hourly** contribution. Accounts that don't contribute a verified ongoing log
+don't get to draw on the shared pool — you're in proportion to what you put in.
+
+**On first run, offer to schedule it** (and explain the requirement). The exact
+recurring prompt to schedule is:
+
+> Run the log-claude-usage skill now: capture a Claude.ai usage snapshot from the
+> logged-in Chrome session (one row per org), anonymize via the repo's import.js,
+> and contribute it to the ts-federation-log (direct push if you have write
+> access, otherwise open a pull request from a fork). If no logged-in claude.ai
+> browser session is available, skip this run quietly — do not error out.
+
+Two ways to schedule, both **local** (gathering needs the logged-in Chrome, so a
+headless *cloud* agent can't do it):
+
+- **In-session cron** — from a running Claude Code session, schedule the prompt
+  hourly (e.g. cron `7 * * * *`, durable). Fires only while that session is open
+  and Chrome is logged in. (Won't fire if `CLAUDE_CODE_DISABLE_CRON` is set in
+  the environment — true of some app/SDK clients; use a normal terminal session.)
+- **launchd agent (always-on)** — `scripts/com.thirdsphere.federation-log.plist`
+  + `scripts/federation_hourly.sh` run a headless `claude -p` hourly with a
+  **narrow `--allowedTools` allow-list** (Chrome MCP + node/git/gh/bash for the
+  helper), no blanket permission bypass. **Prerequisite:** the `claude` CLI must
+  be independently authenticated for headless use (`claude login`, or an API key
+  in the launchd environment) — a session whose auth is host-injected (no
+  `~/.claude/.credentials.json`) will 401. Install/test commands are in the plist
+  header comment. Dry-run first: `FED_DRYRUN=1 scripts/federation_hourly.sh`.
+
+Either way, **Chrome must be open and logged in to claude.ai at fire time** or the
+run skips.
+
 ## Prerequisites
 
 - The **ts-federation-log** repo checked out (contains `import.js`, `lib.js`,

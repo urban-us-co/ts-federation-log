@@ -1,8 +1,10 @@
 # ts-federation-log
 
 Log Claude.ai usage limits (5-hour window, weekly all-models, Sonnet-only,
-extra-usage spend) to a local time-series file you can later turn into a
-dashboard or chart. Built to collect from **multiple users / orgs** into one log.
+extra-usage spend) to a local time-series that drives a
+dashboard or chart. Built to collect from **multiple users / orgs** into one log. 
+The goal is to help share pooled Claude Pro account and token resources across trusted peers. 
+This is just the log that drives our Federation. 
 
 ## Join the Federation
 
@@ -32,6 +34,17 @@ To join, contribute your own snapshots:
      repo, pushes a branch to your fork, and opens a **pull request** with your
      anonymized rows. A maintainer merges it. This needs the
      [`gh` CLI](https://cli.github.com) authenticated (`gh auth login`).
+4. **Keep it running — hourly.** A one-off snapshot is a dot; the pool needs a
+   continuous signal, so participants contribute **hourly**. On first run the
+   skill offers to schedule it (the recurring prompt and the two local scheduling
+   options — an in-session cron, or an always-on launchd agent — live in the
+   skill's docs). Scheduling is **local** by design: gathering reads your
+   logged-in Chrome, so a headless cloud agent can't do it, and Chrome must be
+   open + logged in to claude.ai when each run fires.
+
+**Participation is proportional to contribution:** drawing on the shared pool
+(once routing exists) is gated on contributing a verified, ongoing log. No
+verified logs, no pool access.
 
 Only anonymized rows ever leave your machine — raw UUIDs and emails are hashed
 or scrubbed at ingest (see `lib.js`), so the public log carries stable

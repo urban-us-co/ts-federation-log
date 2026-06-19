@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hourly unattended usage contribution for ts-federation-log.
+
+  Install (edit the script path below if your checkout differs):
+    cp .claude/skills/log-claude-usage/scripts/com.thirdsphere.federation-log.plist \
+       ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.thirdsphere.federation-log.plist
+
+  Test one run now (real contribution):
+    launchctl kickstart -k gui/$(id -u)/com.thirdsphere.federation-log
+  Dry run (gather + report, no commit/push):
+    FED_DRYRUN=1 .claude/skills/log-claude-usage/scripts/federation_hourly.sh
+
+  Uninstall:
+    launchctl bootout gui/$(id -u)/com.thirdsphere.federation-log
+    rm ~/Library/LaunchAgents/com.thirdsphere.federation-log.plist
+
+  Requires Chrome open + logged in to claude.ai (Claude-in-Chrome extension
+  connected) at fire time; otherwise the run skips quietly. Logs land in
+  ~/Library/Logs/federation-log/.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.thirdsphere.federation-log</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/stonly/Projects/Third Sphere IT and Software Dev/ts-federation-log/.claude/skills/log-claude-usage/scripts/federation_hourly.sh</string>
+  </array>
+
+  <!-- Hourly at :17 (off the :00/:30 marks, and offset from the in-session
+       cron's :07 so they don't collide if both are active). -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Minute</key>
+    <integer>17</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+
+  <key>StandardOutPath</key>
+  <string>/Users/stonly/Library/Logs/federation-log/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/stonly/Library/Logs/federation-log/launchd.err.log</string>
+</dict>
+</plist>
