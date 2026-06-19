@@ -49,6 +49,15 @@ Hard-won lessons — follow these or you'll waste time:
   `get_page_text`, or `read_page` on claude.ai — that page holds streaming
   connections open and never reaches `document_idle`, so those tools hang for
   45s and fail. `javascript_tool` runs immediately regardless.
+- **Use top-level `await`, not an IIFE.** `javascript_tool` has REPL
+  semantics — it returns the value of the last expression. A
+  `(async () => { … return X })()` wrapper resolves to a Promise the tool
+  doesn't await, so it returns `{}`. Write the bare expression as the last line
+  (e.g. `await fetch(...).then(r=>r.json())`, or a `JSON.stringify(...)`).
+- **The tool truncates returns at ~1000 chars.** A full `/usage` payload is
+  bigger than that, so reading it directly corrupts `raw`. Stash the assembled
+  snapshot on a `window` var and pull it back out in <900-char slices, then
+  reassemble (see step 5).
 - **Don't drive the Settings UI.** The modal won't open from a URL
   (`/settings/usage` redirects to the chat), and clicking React menus
   programmatically is unreliable. Go straight to the API.
@@ -63,26 +72,36 @@ Steps:
    Chrome with the extension and log in to claude.ai.
 2. `navigate` a tab to `https://claude.ai/new` (any logged-in claude.ai page is
    fine). You don't need the page to finish loading.
-3. **Identity + org list** — one `javascript_tool` call:
+3. **Identity + org list** — one `javascript_tool` call (top-level await, no
+   IIFE):
    ```js
-   (async () => {
-     const a = await fetch('/api/account', {credentials:'include', headers:{accept:'application/json'}}).then(r=>r.json());
-     return JSON.stringify({uuid:a.uuid, email:a.email_address, name:a.full_name,
-       orgs:(a.memberships||[]).map(m=>({uuid:m.organization.uuid, name:m.organization.name}))});
-   })()
+   const a = await fetch('/api/account', {credentials:'include', headers:{accept:'application/json'}}).then(r=>r.json());
+   JSON.stringify({uuid:a.uuid, email:a.email_address, name:a.full_name,
+     orgs:(a.memberships||[]).map(m=>({uuid:m.organization.uuid, name:m.organization.name}))})
    ```
    If this is empty / errors, the user isn't logged in — stop and tell them.
-4. **Per-org usage** — for each org, a separate `javascript_tool` call. Fetch one
-   org at a time on purpose: a single call returning every org's full payload can
-   exceed the tool-result size limit and get truncated, corrupting the data.
+4. **Assemble the whole snapshot in-page, stash it on `window`.** Loop over the
+   orgs, fetch each `/usage` payload, build one raw record per org (skip any
+   with no `five_hour` key), join as JSONL on `window.__snap`, and return only
+   the lengths — never the payloads themselves (they'd truncate):
    ```js
-   (async () => (await fetch('/api/organizations/ORG_UUID/usage',
-     {credentials:'include', headers:{accept:'application/json'}}).then(r=>r.json())))()
+   const ts = new Date().toISOString();
+   const acct = await fetch('/api/account',{credentials:'include',headers:{accept:'application/json'}}).then(r=>r.json());
+   const orgs = (acct.memberships||[]).map(m=>({uuid:m.organization.uuid, name:m.organization.name}));
+   const recs = [];
+   for (const o of orgs) {
+     const u = await fetch(`/api/organizations/${o.uuid}/usage`,{credentials:'include',headers:{accept:'application/json'}}).then(r=>r.json());
+     if (!u || !u.five_hour) continue;
+     recs.push({ts, recorded_by:"skill", user_uuid:acct.uuid, user_email:acct.email_address, user_name:acct.full_name, org_uuid:o.uuid, org_name:o.name, raw:u});
+   }
+   window.__snap = recs.map(r=>JSON.stringify(r)).join("\n");
+   JSON.stringify({ts, n:recs.length, totalLen:window.__snap.length})
    ```
-   Skip any org whose payload has no `five_hour` key (no usage surface).
-5. Assemble the raw records (identity from step 3 + org name/uuid + that org's
-   `raw` payload), using a single `ts` for the whole snapshot, and
-   `"recorded_by":"skill"`.
+5. **Pull `window.__snap` back out in slices** of <900 chars
+   (`window.__snap.slice(0,900)`, `slice(900,1800)`, … up to `totalLen`) and
+   concatenate them — that exact string is the snapshot file. After writing it,
+   verify `joined.length === totalLen` and that every line `JSON.parse`s before
+   importing; a mismatch means a slice was dropped or overlapped.
 
 ### Manual gathering (no browser automation)
 
