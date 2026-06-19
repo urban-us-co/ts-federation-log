@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ts-federation-log · usage dashboard</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c232c; --border:#30363d;
+    --fg:#e6edf3; --muted:#8b949e; --faint:#6e7681;
+    --accent:#58a6ff;
+    --ok:#3fb950; --warn:#d29922; --crit:#f85149;
+    --grid:#21262d;
+    --c0:#58a6ff; --c1:#3fb950; --c2:#d29922; --c3:#bc8cff; --c4:#f778ba;
+    --c5:#39c5cf; --c6:#ff9b50; --c7:#7ee787;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;}
+  a{color:var(--accent)}
+  header{padding:20px 24px 8px;border-bottom:1px solid var(--border)}
+  h1{margin:0;font-size:18px;font-weight:600;letter-spacing:.2px}
+  .sub{color:var(--muted);font-size:12.5px;margin-top:4px}
+  .wrap{max-width:1200px;margin:0 auto;padding:20px 24px 60px}
+  .toolbar{display:flex;flex-wrap:wrap;gap:14px 22px;align-items:center;
+    background:var(--panel);border:1px solid var(--border);border-radius:10px;
+    padding:12px 16px;margin:18px 0}
+  .toolbar label{color:var(--muted);font-size:12px;margin-right:6px}
+  select,button{background:var(--panel2);color:var(--fg);border:1px solid var(--border);
+    border-radius:7px;padding:6px 10px;font:inherit;font-size:13px;cursor:pointer}
+  select:hover,button:hover{border-color:var(--faint)}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{display:inline-flex;align-items:center;gap:7px;background:var(--panel2);
+    border:1px solid var(--border);border-radius:20px;padding:4px 11px;font-size:12.5px;
+    cursor:pointer;user-select:none;transition:opacity .15s}
+  .chip .dot{width:9px;height:9px;border-radius:50%}
+  .chip.off{opacity:.38}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);
+    font-weight:600;margin:30px 0 12px}
+  /* indicator cards */
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px}
+  .card .who{font-weight:600;font-size:14px;display:flex;align-items:center;gap:8px}
+  .card .org{color:var(--muted);font-size:12px;margin:2px 0 0 17px}
+  .card .when{color:var(--faint);font-size:11px;margin:2px 0 14px 17px}
+  .metric{margin:11px 0}
+  .metric .top{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px}
+  .metric .top .v{font-variant-numeric:tabular-nums;font-weight:600}
+  .bar{height:7px;border-radius:4px;background:var(--grid);overflow:hidden}
+  .bar > i{display:block;height:100%;border-radius:4px}
+  .pill{font-size:10px;padding:1px 7px;border-radius:10px;border:1px solid currentColor;font-weight:600}
+  /* chart */
+  .chartbox{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px 10px 8px}
+  svg{width:100%;display:block;overflow:visible}
+  .gtick{stroke:var(--grid);stroke-width:1}
+  .axis{fill:var(--faint);font-size:11px;font-variant-numeric:tabular-nums}
+  .axis-title{fill:var(--muted);font-size:11px}
+  .dataline{fill:none;stroke-width:2;vector-effect:non-scaling-stroke}
+  .dot{stroke:var(--bg);stroke-width:1.5}
+  .crosshair{stroke:var(--faint);stroke-dasharray:3 3;stroke-width:1}
+  .tooltip{position:fixed;pointer-events:none;background:#0b0f14;border:1px solid var(--border);
+    border-radius:8px;padding:8px 10px;font-size:12px;z-index:10;opacity:0;transition:opacity .08s;
+    box-shadow:0 6px 22px rgba(0,0,0,.5);max-width:280px}
+  .tooltip .tt-t{color:var(--faint);font-size:10.5px;margin-bottom:5px}
+  .tooltip .row{display:flex;align-items:center;gap:7px;white-space:nowrap}
+  .tooltip .row .v{margin-left:auto;font-variant-numeric:tabular-nums;font-weight:600}
+  .empty{color:var(--muted);text-align:center;padding:50px 20px}
+  .drop{border:1.5px dashed var(--border);border-radius:12px;padding:26px;text-align:center;color:var(--muted)}
+  .drop.hot{border-color:var(--accent);color:var(--fg)}
+  .note{color:var(--faint);font-size:11.5px;margin-top:8px}
+  code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Claude usage · federation log</h1>
+  <div class="sub" id="sub">loading <code>data/usage-log.jsonl</code> …</div>
+</header>
+
+<div class="wrap">
+  <div id="loader"></div>
+
+  <div id="app" style="display:none">
+    <div class="toolbar">
+      <div><label>Metric</label>
+        <select id="metric"></select>
+      </div>
+      <div style="flex:1;min-width:200px">
+        <label style="display:block;margin-bottom:6px">Series</label>
+        <div class="chips" id="chips"></div>
+      </div>
+      <button id="all">all</button>
+      <button id="none">none</button>
+    </div>
+
+    <h2>Current state <span style="text-transform:none;color:var(--faint);font-weight:400" id="latest-ts"></span></h2>
+    <div class="cards" id="cards"></div>
+
+    <h2 id="ts-title">Over time</h2>
+    <div class="chartbox"><div id="chart"></div></div>
+    <div class="note">Hover the chart for exact values. Click a series chip to toggle it. % limits share a 0–100 axis; spend ($) gets its own axis.</div>
+  </div>
+</div>
+
+<div class="tooltip" id="tip"></div>
+
+<script>
+const PALETTE=['--c0','--c1','--c2','--c3','--c4','--c5','--c6','--c7']
+  .map(v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim());
+
+// metric definitions: key on the flat row, label, unit, accessor
+const METRICS=[
+  {k:'five_hour_pct',   label:'5-hour session',     unit:'%'},
+  {k:'weekly_all_pct',  label:'Weekly (all models)',unit:'%'},
+  {k:'weekly_sonnet_pct',label:'Weekly Sonnet',     unit:'%'},
+  {k:'spend_pct',       label:'Extra-usage spend',  unit:'%'},
+  {k:'spend_used_usd',  label:'Extra-usage spend',  unit:'$'},
+];
+
+let ROWS=[];          // parsed rows
+let SERIES=[];        // [{id,user,org,color}]
+const active=new Set();
+let curMetric='weekly_all_pct';
+
+function seriesId(r){return r.user_id+'|'+r.org_id;}
+function seriesLabel(r){return r.user_name+' · '+r.org_name;}
+
+function parseJsonl(text){
+  return text.split('\n').map(l=>l.trim()).filter(Boolean).map(l=>{
+    try{return JSON.parse(l);}catch(e){return null;}
+  }).filter(Boolean).filter(r=>r.ts && r.user_id);
+}
+
+function boot(rows){
+  ROWS=rows.sort((a,b)=>new Date(a.ts)-new Date(b.ts));
+  // build series list
+  const seen=new Map();
+  for(const r of ROWS){
+    const id=seriesId(r);
+    if(!seen.has(id)) seen.set(id,{id,label:seriesLabel(r),user:r.user_name,org:r.org_name});
+  }
+  SERIES=[...seen.values()].map((s,i)=>({...s,color:PALETTE[i%PALETTE.length]}));
+  SERIES.forEach(s=>active.add(s.id));
+
+  document.getElementById('sub').innerHTML=
+    `${ROWS.length} snapshots · ${SERIES.length} user×org series · `+
+    `${fmtDate(ROWS[0].ts)} → ${fmtDate(ROWS[ROWS.length-1].ts)}`;
+  document.getElementById('loader').innerHTML='';
+  document.getElementById('app').style.display='';
+
+  buildMetricSelect();
+  buildChips();
+  render();
+}
+
+function buildMetricSelect(){
+  const sel=document.getElementById('metric');
+  sel.innerHTML=METRICS.map(m=>`<option value="${m.k}">${m.label}${m.unit==='$'?' ($)':' (%)'}</option>`).join('');
+  sel.value=curMetric;
+  sel.onchange=()=>{curMetric=sel.value;render();};
+}
+
+function buildChips(){
+  const box=document.getElementById('chips');
+  box.innerHTML='';
+  SERIES.forEach(s=>{
+    const el=document.createElement('span');
+    el.className='chip';
+    el.innerHTML=`<span class="dot" style="background:${s.color}"></span>${s.label}`;
+    el.onclick=()=>{active.has(s.id)?active.delete(s.id):active.add(s.id);
+      el.classList.toggle('off',!active.has(s.id));render();};
+    box.appendChild(el);
+    s._chip=el;
+  });
+  document.getElementById('all').onclick=()=>{SERIES.forEach(s=>{active.add(s.id);s._chip.classList.remove('off')});render();};
+  document.getElementById('none').onclick=()=>{SERIES.forEach(s=>{active.delete(s.id);s._chip.classList.add('off')});render();};
+}
+
+function sev(pct){return pct>=90?'crit':pct>=70?'warn':'ok';}
+function sevColor(pct){return getComputedStyle(document.documentElement).getPropertyValue('--'+sev(pct)).trim();}
+function fmtDate(ts){const d=new Date(ts);return d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});}
+function fmtVal(v,unit){if(v==null)return '—';return unit==='$'?'$'+(+v).toFixed(2):(+v)+'%';}
+
+function render(){renderCards();renderChart();}
+
+// ---- indicator cards: latest snapshot per active series ----
+function renderCards(){
+  const latest=new Map();
+  for(const r of ROWS){ if(active.has(seriesId(r))) latest.set(seriesId(r),r); }
+  const rows=[...latest.values()];
+  const maxTs=rows.reduce((m,r)=>Math.max(m,+new Date(r.ts)),0);
+  document.getElementById('latest-ts').textContent=rows.length?'· latest '+fmtDate(new Date(maxTs).toISOString()):'';
+
+  const fields=[
+    {k:'five_hour_pct',label:'5-hour',unit:'%'},
+    {k:'weekly_all_pct',label:'Weekly all',unit:'%'},
+    {k:'weekly_sonnet_pct',label:'Weekly Sonnet',unit:'%'},
+    {k:'spend_pct',label:'Extra-usage',unit:'%',sub:r=>r.spend_used_usd!=null?`$${(+r.spend_used_usd).toFixed(0)} / $${r.spend_limit_usd}`:null},
+  ];
+  const box=document.getElementById('cards');
+  if(!rows.length){box.innerHTML='<div class="empty">No series selected.</div>';return;}
+  box.innerHTML=rows.map(r=>{
+    const s=SERIES.find(x=>x.id===seriesId(r));
+    const metrics=fields.map(f=>{
+      const v=r[f.k];
+      if(v==null) return `<div class="metric"><div class="top"><span>${f.label}</span><span class="v" style="color:var(--faint)">—</span></div><div class="bar"></div></div>`;
+      const c=sevColor(v), w=Math.max(2,Math.min(100,v));
+      const sub=f.sub?f.sub(r):null;
+      return `<div class="metric"><div class="top"><span>${f.label}${sub?` <span style="color:var(--faint)">${sub}</span>`:''}</span>`+
+        `<span class="v" style="color:${c}">${v}%</span></div>`+
+        `<div class="bar"><i style="width:${w}%;background:${c}"></i></div></div>`;
+    }).join('');
+    const worst=Math.max(r.five_hour_pct||0,r.weekly_all_pct||0,r.weekly_sonnet_pct||0,r.spend_pct||0);
+    const wc=sevColor(worst);
+    return `<div class="card">
+      <div class="who"><span class="dot" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${s.color}"></span>${r.user_name}
+        <span class="pill" style="color:${wc};margin-left:auto">${sev(worst).toUpperCase()}</span></div>
+      <div class="org">${r.org_name}</div>
+      <div class="when">${fmtDate(r.ts)}${r.extra_usage_enabled?' · extra-usage on':''}</div>
+      ${metrics}
+    </div>`;
+  }).join('');
+}
+
+// ---- time series line chart (vanilla SVG) ----
+function renderChart(){
+  const host=document.getElementById('chart');
+  const m=METRICS.find(x=>x.k===curMetric);
+  document.getElementById('ts-title').textContent='Over time · '+m.label+(m.unit==='$'?' ($)':' (%)');
+
+  // build per-series point arrays for active series with non-null values
+  const data=SERIES.filter(s=>active.has(s.id)).map(s=>({
+    ...s,
+    pts:ROWS.filter(r=>seriesId(r)===s.id && r[curMetric]!=null)
+            .map(r=>({t:+new Date(r.ts),v:+r[curMetric],r}))
+  })).filter(s=>s.pts.length);
+
+  if(!data.length){host.innerHTML='<div class="empty">No data for this metric / selection.</div>';return;}
+
+  const W=1120,H=380,P={l:48,r:18,t:14,b:34};
+  const times=ROWS.map(r=>+new Date(r.ts));
+  let tmin=Math.min(...times),tmax=Math.max(...times);
+  if(tmin===tmax){tmin-=36e5;tmax+=36e5;}
+  const vmax=m.unit==='%'?100:Math.max(10,Math.ceil(Math.max(...data.flatMap(s=>s.pts.map(p=>p.v)))/10)*10);
+  const X=t=>P.l+(t-tmin)/(tmax-tmin)*(W-P.l-P.r);
+  const Y=v=>P.t+(1-v/vmax)*(H-P.t-P.b);
+
+  // gridlines + y labels
+  const yticks=m.unit==='%'?[0,25,50,75,100]:[0,vmax*.25,vmax*.5,vmax*.75,vmax];
+  let g='';
+  yticks.forEach(v=>{const y=Y(v);
+    g+=`<line class="gtick" x1="${P.l}" y1="${y}" x2="${W-P.r}" y2="${y}"/>`+
+       `<text class="axis" x="${P.l-8}" y="${y+4}" text-anchor="end">${m.unit==='$'?'$'+Math.round(v):v}</text>`;});
+  // x ticks (up to 6)
+  const n=Math.min(6,times.length), xs=[];
+  for(let i=0;i<n;i++) xs.push(tmin+(tmax-tmin)*i/(Math.max(1,n-1)));
+  xs.forEach(t=>{const x=X(t);
+    g+=`<text class="axis" x="${x}" y="${H-P.b+18}" text-anchor="middle">${fmtTick(t)}</text>`;});
+
+  // lines + dots
+  let lines='';
+  data.forEach(s=>{
+    const d=s.pts.map((p,i)=>`${i?'L':'M'}${X(p.t).toFixed(1)} ${Y(p.v).toFixed(1)}`).join(' ');
+    lines+=`<path class="dataline" stroke="${s.color}" d="${d}"/>`;
+    s.pts.forEach(p=>{lines+=`<circle class="dot" cx="${X(p.t).toFixed(1)}" cy="${Y(p.v).toFixed(1)}" r="3.5" fill="${s.color}"/>`;});
+  });
+
+  host.innerHTML=`<svg viewBox="0 0 ${W} ${H}" id="svg">
+    ${g}
+    <line class="gtick" x1="${P.l}" y1="${P.t}" x2="${P.l}" y2="${H-P.b}"/>
+    <line class="gtick" x1="${P.l}" y1="${H-P.b}" x2="${W-P.r}" y2="${H-P.b}"/>
+    <g id="cross"></g>
+    ${lines}
+    <rect id="hit" x="${P.l}" y="${P.t}" width="${W-P.l-P.r}" height="${H-P.t-P.b}" fill="transparent"/>
+  </svg>`;
+
+  // interactivity: nearest timestamp -> tooltip
+  const svg=host.querySelector('#svg'), cross=host.querySelector('#cross'),
+        hit=host.querySelector('#hit'), tip=document.getElementById('tip');
+  const uniqT=[...new Set(data.flatMap(s=>s.pts.map(p=>p.t)))].sort((a,b)=>a-b);
+  function move(ev){
+    const r=svg.getBoundingClientRect();
+    const px=(ev.clientX-r.left)/r.width*W;
+    const tx=tmin+(px-P.l)/(W-P.l-P.r)*(tmax-tmin);
+    let best=uniqT[0]; for(const t of uniqT) if(Math.abs(t-tx)<Math.abs(best-tx)) best=t;
+    const x=X(best);
+    cross.innerHTML=`<line class="crosshair" x1="${x}" y1="${P.t}" x2="${x}" y2="${H-P.b}"/>`;
+    const rows=data.map(s=>{const p=s.pts.find(p=>p.t===best);return p?{s,p}:null;}).filter(Boolean)
+      .sort((a,b)=>b.p.v-a.p.v);
+    tip.innerHTML=`<div class="tt-t">${new Date(best).toLocaleString()}</div>`+
+      rows.map(({s,p})=>`<div class="row"><span class="dot" style="width:9px;height:9px;border-radius:50%;background:${s.color}"></span>`+
+        `${s.label}<span class="v">${fmtVal(p.v,m.unit)}</span></div>`).join('');
+    tip.style.opacity=1;
+    let tx2=ev.clientX+14, ty=ev.clientY+14;
+    if(tx2+260>innerWidth) tx2=ev.clientX-274;
+    tip.style.left=tx2+'px'; tip.style.top=ty+'px';
+  }
+  hit.addEventListener('mousemove',move);
+  hit.addEventListener('mouseleave',()=>{tip.style.opacity=0;cross.innerHTML='';});
+}
+
+function fmtTick(t){const d=new Date(t);const span=Math.max(...ROWS.map(r=>+new Date(r.ts)))-Math.min(...ROWS.map(r=>+new Date(r.ts)));
+  return span<864e5?d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'})
+    :d.toLocaleDateString(undefined,{month:'short',day:'numeric'});}
+
+// ---- data loading: fetch the tracked log, fall back to file drop ----
+function showDrop(msg){
+  document.getElementById('sub').textContent=msg;
+  document.getElementById('loader').innerHTML=
+    `<div class="drop" id="drop">Drop a <code>usage-log.jsonl</code> here, or
+       <label style="color:var(--accent);cursor:pointer">browse<input type="file" id="file" accept=".jsonl,.json,.txt" style="display:none"></label>.
+       <div class="note">Opening this file directly (file://) blocks fetch. Serve the repo
+       (<code>python3 -m http.server</code>) to auto-load the tracked log.</div></div>`;
+  const drop=document.getElementById('drop'), file=document.getElementById('file');
+  const read=f=>f.text().then(t=>boot(parseJsonl(t)));
+  file.onchange=e=>e.target.files[0]&&read(e.target.files[0]);
+  ['dragover','dragenter'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('hot');}));
+  ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hot');}));
+  drop.addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(f)read(f);});
+}
+
+fetch('data/usage-log.jsonl?_='+Date.now())
+  .then(r=>{if(!r.ok)throw new Error(r.status);return r.text();})
+  .then(t=>{const rows=parseJsonl(t);if(!rows.length)throw new Error('empty');boot(rows);})
+  .catch(()=>showDrop('Could not auto-load the log — load it manually below.'));
+</script>
+</body>
+</html>
