@@ -3,19 +3,12 @@
 Log Claude.ai usage limits (5-hour window, weekly all-models, Sonnet-only,
 extra-usage spend) to a local time-series that drives a
 dashboard or chart. Built to collect from **multiple users / orgs** into one log. 
-The goal is to help share pooled Claude Pro account and token resources across trusted peers. 
-This is just the log that drives our Federation. 
 
 ## Join the Federation
 
-The "federation" is the pooled log of usage across many Claude accounts. **Today
-it's just tracking** — a shared time series of how close each user/org is to
+The "federation" is a shared time series of how close each user/org is to
 their 5-hour, weekly, and spend limits, visualized in the
 [dashboard](https://urban-us-co.github.io/ts-federation-log/dashboard.html).
-**The vision:** once enough accounts contribute, that shared signal can be used
-to *load-balance token and plan usage across accounts* — route work to whoever
-has headroom instead of hammering one account into a rate limit. We're not doing
-the routing yet; we're building the data that would make it possible.
 
 To join, contribute your own snapshots:
 
@@ -45,9 +38,6 @@ To join, contribute your own snapshots:
    A copy-paste prompt lives in
    `.claude/skills/log-claude-usage/SETUP-ON-NEW-MACHINE.md`.
 
-**Participation is proportional to contribution:** drawing on the shared pool
-(once routing exists) is gated on contributing a verified, ongoing log. No
-verified logs, no pool access.
 
 Only anonymized rows ever leave your machine — raw UUIDs and emails are hashed
 or scrubbed at ingest (see `lib.js`), so the public log carries stable
