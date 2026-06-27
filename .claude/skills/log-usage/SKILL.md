@@ -1,5 +1,5 @@
 ---
-name: log-claude-usage
+name: log-usage
 description: >-
   Capture a Claude.ai usage snapshot — the 5-hour session limit, weekly
   all-models limit, Sonnet-only weekly sub-limit, and extra-usage/credit spend —
@@ -28,10 +28,8 @@ anonymize via the repo's `import.js`, and append one row per org to
 ## Run it hourly (participation)
 
 The federation is only useful if it's continuous: a single snapshot is a dot, a
-**verified hourly time series** is what lets the pool eventually load-balance
-token/plan usage across accounts. So the expectation for participants is an
-**hourly** contribution. Accounts that don't contribute a verified ongoing log
-don't get to draw on the shared pool — you're in proportion to what you put in.
+**verified hourly time series**.
+So the expectation for participants is an **hourly** contribution. 
 
 **On first run, offer to schedule it** (and explain the requirement), using
 Claude Code's **`/schedule`** feature (the `scheduled-tasks` tools). Create a
@@ -157,7 +155,7 @@ Then run the helper, which ingests, sanity-checks for leaked PII, commits, and
 pushes:
 
 ```bash
-.claude/skills/log-claude-usage/scripts/log_and_push.sh /tmp/usage-<ts>.jsonl
+.claude/skills/log-usage/scripts/log_and_push.sh /tmp/usage-<ts>.jsonl
 ```
 
 Or do the steps by hand if you want more control:
