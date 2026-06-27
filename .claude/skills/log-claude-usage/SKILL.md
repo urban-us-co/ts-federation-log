@@ -56,6 +56,9 @@ Operational notes:
   bash) so later hourly runs don't pause on permission prompts.
 - To change cadence or prompt, use `update_scheduled_task` (don't create a
   duplicate); `list_scheduled_tasks` finds the id.
+- To set this up on another machine, a copy-paste prompt (locates the repo,
+  clones if missing, then creates the task) lives in `SETUP-ON-NEW-MACHINE.md`
+  next to this file.
 
 ## Prerequisites
 

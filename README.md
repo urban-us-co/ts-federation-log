@@ -41,7 +41,9 @@ To join, contribute your own snapshots:
    connected Chrome available, so they can read your logged-in claude.ai session
    — just keep the app open and Chrome logged in (a run due while the app is
    closed happens on next launch). Click **"Run now"** once after creating the
-   task to pre-approve the tools it uses.
+   task to pre-approve the tools it uses. Setting this up on another machine?
+   A copy-paste prompt lives in
+   `.claude/skills/log-claude-usage/SETUP-ON-NEW-MACHINE.md`.
 
 **Participation is proportional to contribution:** drawing on the shared pool
 (once routing exists) is gated on contributing a verified, ongoing log. No
