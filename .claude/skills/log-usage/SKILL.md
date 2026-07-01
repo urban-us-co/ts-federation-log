@@ -58,6 +58,34 @@ Operational notes:
   clones if missing, then creates the task) lives in `SETUP-ON-NEW-MACHINE.md`
   next to this file.
 
+## Keeping a node in sync
+
+Each machine ("node") has its own checkout that drifts from `origin/main` as
+other nodes push rows and as the skill / dashboard / helper get updated. Pull
+before you contribute so every run uses the latest code and appends onto the
+newest log. The hourly run does this automatically as its first step; to sync by
+hand from the repo root:
+
+```bash
+git pull --rebase --autostash origin main
+```
+
+The log is **append-only**, so always **rebase, never merge** — a merge commit
+on a shared append-only file is noise, and rebasing keeps this node's own
+un-pushed rows stacked cleanly on top. `--autostash` tucks away any local edits
+first; `--rebase` replays your local commits on top of what you fetched.
+
+If a rebase ever conflicts on `data/usage-log.jsonl` (rare — appends seldom
+collide), the correct resolution is the **union of both sides** (keep every row
+from both), then `git rebase --continue`. If it gets messy, `git rebase --abort`
+and pull again — the helper (`log_and_push.sh`) also rebases right before it
+pushes, so a run still lands its row even if you skip the manual sync.
+
+Note: the *scheduled-task prompt itself* lives in `~/.claude/scheduled-tasks/`,
+outside the repo, so `git pull` won't refresh it. If the run procedure changes
+materially, re-run the `SETUP-ON-NEW-MACHINE.md` prompt (it updates the existing
+task in place) to update each node's prompt.
+
 ## Prerequisites
 
 - The **ts-federation-log** repo checked out (contains `import.js`, `lib.js`,

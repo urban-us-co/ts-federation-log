@@ -25,7 +25,7 @@ Set up the hourly "ts-federation-log" Claude usage contribution on this machine.
 
 STEP 1 — Locate the repo (don't assume a path):
 - Search likely locations for a checkout of github.com/urban-us-co/ts-federation-log
-  (it contains import.js, lib.js, and .claude/skills/log-claude-usage/SKILL.md).
+  (it contains import.js, lib.js, and .claude/skills/log-usage/SKILL.md).
   Try: `find ~ -maxdepth 6 -type d -name ts-federation-log 2>/dev/null` and check
   each hit with `git -C <dir> remote get-url origin`.
 - If you find it, confirm the remote is urban-us-co/ts-federation-log and note its
@@ -35,7 +35,7 @@ STEP 1 — Locate the repo (don't assume a path):
 - Print the resolved REPO path before continuing.
 
 STEP 2 — Read the skill so you set things up correctly:
-- Read REPO/.claude/skills/log-claude-usage/SKILL.md (especially the
+- Read REPO/.claude/skills/log-usage/SKILL.md (especially the
   "Run it hourly (participation)" section).
 
 STEP 3 — Create the recurring task via Claude Code's /schedule (the
@@ -48,7 +48,8 @@ self-contained — substitute the real REPO path you resolved in Step 1):
   Capture a Claude.ai usage snapshot and contribute it to the ts-federation-log
   time series (hourly federation contribution).
   REPO: <ABSOLUTE REPO PATH>
-  Prefer the project skill "log-claude-usage" — read REPO/.claude/skills/log-claude-usage/SKILL.md and follow it.
+  Prefer the project skill "log-usage" — read REPO/.claude/skills/log-usage/SKILL.md and follow it.
+  SYNC FIRST: from REPO run `git pull --rebase --autostash origin main` to pull the latest code + rows before contributing. The log is append-only — rebase, never merge; if it conflicts on data/usage-log.jsonl take the union of both sides then `git rebase --continue`, or `git rebase --abort` and continue (the helper rebases again before pushing).
   PRECONDITION: needs a logged-in claude.ai session in the connected Chrome (Claude in Chrome).
   If no browser is connected or /api/account returns empty, SKIP quietly — report "gathering unavailable, skipped", do NOT error or commit.
   GATHER via the Claude-in-Chrome javascript_tool only (never screenshot/get_page_text/read_page on claude.ai — they hang):
@@ -65,7 +66,7 @@ self-contained — substitute the real REPO path you resolved in Step 1):
    5) Retrieve window.__snap in <900-char slices, concatenate, verify joined length === totalLen and every line JSON.parses.
   LOG + CONTRIBUTE:
    6) Write the reassembled JSONL to a file OUTSIDE the repo (e.g. /tmp/usage-<ts>.jsonl) — it holds raw email/uuid; import.js anonymizes before anything touches the tracked log.
-   7) From REPO run: .claude/skills/log-claude-usage/scripts/log_and_push.sh /tmp/usage-<ts>.jsonl
+   7) From REPO run: .claude/skills/log-usage/scripts/log_and_push.sh /tmp/usage-<ts>.jsonl
       (anonymizes + de-dupes + PII-checks, then direct-pushes to main if you have write access, else forks via gh and opens a PR).
   REPORT: orgs captured (5-hour %, weekly %, spend %), rows added vs skipped, and whether it pushed (commit hash) or opened a PR (URL) — or that it skipped (no logged-in browser).
   """

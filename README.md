@@ -36,7 +36,16 @@ To join, contribute your own snapshots:
    closed happens on next launch). Click **"Run now"** once after creating the
    task to pre-approve the tools it uses. Setting this up on another machine?
    A copy-paste prompt lives in
-   `.claude/skills/log-claude-usage/SETUP-ON-NEW-MACHINE.md`.
+   `.claude/skills/log-usage/SETUP-ON-NEW-MACHINE.md`.
+5. **Stay in sync.** Each machine ("node") drifts from `origin/main` as other
+   nodes push rows and as the skill/dashboard get updated, so pull before you
+   contribute. The log is **append-only** — always rebase, never merge:
+   ```bash
+   git pull --rebase --autostash origin main
+   ```
+   The hourly task does this as its first step, so a scheduled node stays current
+   on its own. See "Keeping a node in sync" in
+   `.claude/skills/log-usage/SKILL.md` for conflict handling.
 
 
 Only anonymized rows ever leave your machine — raw UUIDs and emails are hashed
