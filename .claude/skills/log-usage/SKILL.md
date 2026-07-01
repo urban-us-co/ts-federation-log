@@ -86,6 +86,44 @@ outside the repo, so `git pull` won't refresh it. If the run procedure changes
 materially, re-run the `SETUP-ON-NEW-MACHINE.md` prompt (it updates the existing
 task in place) to update each node's prompt.
 
+## Propagating code changes to the fleet
+
+When you change the *code* — this `SKILL.md`, `scripts/log_and_push.sh`,
+`dashboard.html`, `import.js`/`lib.js` — it reaches other nodes through **two
+different channels**, and only one is automatic:
+
+1. **Repo-tracked code → automatic via `git pull`.** Everything under version
+   control travels with `git pull --rebase origin main`. Because the hourly task
+   pulls as its first step (see above), every *scheduled* node picks up merged
+   code changes within the hour — no per-node action needed. A node that only
+   runs the skill manually gets the update on its next run (the helper) or
+   whenever someone pulls. So: **merge to `main`, and scheduled nodes
+   self-update.**
+
+2. **The out-of-repo run prompt → manual refresh.** Each node's scheduled-task
+   prompt is a *copy* stored in `~/.claude/scheduled-tasks/<id>/SKILL.md`, made
+   when the task was created. `git pull` does **not** touch it. If a change alters
+   *what the run does* (the gather steps, the helper path, the contribution
+   flow), each node must refresh its task by re-running the
+   `SETUP-ON-NEW-MACHINE.md` prompt — it calls `update_scheduled_task` and
+   rewrites the prompt in place (it does not create a duplicate). Changes that
+   only touch files the run *reads at runtime* (this `SKILL.md`, the helper
+   script) need no prompt refresh, since the run pulls and re-reads them.
+
+Rollout checklist for a code change:
+
+- [ ] Commit + push to `main` (or land it via PR).
+- [ ] Confirm it's on `origin/main` — that alone updates scheduled nodes on their
+      next hourly pull.
+- [ ] **Only if the run procedure changed:** on each node, re-run the
+      `SETUP-ON-NEW-MACHINE.md` prompt to refresh that node's task prompt, then
+      "Run now" once to re-approve any newly-needed tools.
+- [ ] To push an update out immediately on a node instead of waiting for the
+      hour: from its repo root run `git pull --rebase origin main`.
+
+To see whether a node is behind: `git -C <repo> fetch -q && git -C <repo> log --oneline HEAD..origin/main`
+(empty = up to date).
+
 ## Prerequisites
 
 - The **ts-federation-log** repo checked out (contains `import.js`, `lib.js`,

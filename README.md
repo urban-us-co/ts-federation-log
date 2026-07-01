@@ -44,8 +44,12 @@ To join, contribute your own snapshots:
    git pull --rebase --autostash origin main
    ```
    The hourly task does this as its first step, so a scheduled node stays current
-   on its own. See "Keeping a node in sync" in
-   `.claude/skills/log-usage/SKILL.md` for conflict handling.
+   on its own — including **code** updates (skill, helper, dashboard), which ride
+   along with the same pull. The one thing `git pull` can't refresh is a node's
+   out-of-repo scheduled-task prompt; bump that by re-running the
+   `SETUP-ON-NEW-MACHINE.md` prompt. See "Keeping a node in sync" and
+   "Propagating code changes to the fleet" in `.claude/skills/log-usage/SKILL.md`
+   for conflict handling and the rollout checklist.
 
 
 Only anonymized rows ever leave your machine — raw UUIDs and emails are hashed
