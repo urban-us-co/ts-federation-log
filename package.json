@@ -9,7 +9,8 @@
   },
   "scripts": {
     "start": "node collector.js",
-    "import": "node import.js"
+    "import": "node import.js",
+    "test": "node --test"
   },
   "license": "UNLICENSED"
 }

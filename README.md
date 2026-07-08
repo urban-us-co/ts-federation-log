@@ -1,6 +1,6 @@
 # ts-federation-log
 
-Log Claude.ai usage limits (5-hour window, weekly all-models, Sonnet-only,
+Log Codex.ai usage limits (5-hour window, weekly all-models, Sonnet-only,
 extra-usage spend) to a local time-series that drives a
 dashboard or chart. Built to collect from **multiple users / orgs** into one log. 
 
@@ -17,9 +17,9 @@ To join, contribute your own snapshots:
    git clone https://github.com/urban-us-co/ts-federation-log.git
    cd ts-federation-log
    ```
-2. **Run the skill.** In Claude Code (with the `log-claude-usage` skill — it
-   lives in `.claude/skills/` so it's available the moment you clone) just ask:
-   *"log my Claude usage"*. It reads your live claude.ai session, anonymizes
+2. **Run the skill.** In Codex (with the `log-usage` skill — it lives in
+   `.agents/skills/log-usage/` so it's available the moment you clone) just ask:
+   *"log my Codex usage"*. It reads your live Codex.ai session, anonymizes
    (hashes UUIDs/emails, scrubs names), appends a row per org, and contributes it.
 3. **How your data lands depends on your access:**
    - **Write access** → the row is committed and pushed straight to `main`.
@@ -29,14 +29,14 @@ To join, contribute your own snapshots:
      [`gh` CLI](https://cli.github.com) authenticated (`gh auth login`).
 4. **Keep it running — hourly.** A one-off snapshot is a dot; the pool needs a
    continuous signal, so participants contribute **hourly**. On first run the
-   skill offers to set this up via Claude Code's **`/schedule`** feature as a
+   skill offers to set this up via Codex's **`/schedule`** feature as a
    recurring hourly task. Scheduled tasks run inside the open app with your
-   connected Chrome available, so they can read your logged-in claude.ai session
+   connected Chrome available, so they can read your logged-in Codex.ai session
    — just keep the app open and Chrome logged in (a run due while the app is
    closed happens on next launch). Click **"Run now"** once after creating the
    task to pre-approve the tools it uses. Setting this up on another machine?
    A copy-paste prompt lives in
-   `.claude/skills/log-usage/SETUP-ON-NEW-MACHINE.md`.
+   `.agents/skills/log-usage/SETUP-ON-NEW-MACHINE.md`.
 5. **Stay in sync.** Each machine ("node") drifts from `origin/main` as other
    nodes push rows and as the skill/dashboard get updated, so pull before you
    contribute. The log is **append-only** — always rebase, never merge:
@@ -48,7 +48,7 @@ To join, contribute your own snapshots:
    along with the same pull. The one thing `git pull` can't refresh is a node's
    out-of-repo scheduled-task prompt; bump that by re-running the
    `SETUP-ON-NEW-MACHINE.md` prompt. See "Keeping a node in sync" and
-   "Propagating code changes to the fleet" in `.claude/skills/log-usage/SKILL.md`
+   "Propagating code changes to the fleet" in `.agents/skills/log-usage/SKILL.md`
    for conflict handling and the rollout checklist.
 
 
@@ -58,13 +58,13 @@ or scrubbed at ingest (see `lib.js`), so the public log carries stable
 
 ## How it works
 
-The numbers shown on `claude.ai` Settings → Usage come from an authenticated
+The numbers shown on `Codex.ai` Settings → Usage come from an authenticated
 endpoint: `GET /api/organizations/{org_uuid}/usage`. A small browser snippet
 reads your live session (no stored cookie), pulls usage for **every org you
 belong to**, and records a snapshot.
 
 ```
-  claude.ai (logged in)
+  Codex.ai (logged in)
         │  usage-logger.js  (bookmarklet / console)
         │  fetch /api/account + /api/organizations/*/usage
         ▼
@@ -79,7 +79,7 @@ belong to**, and records a snapshot.
 ### Two ways the snapshot reaches the log
 
 1. **Download + import (reliable).** Chrome's *Local Network Access* protection
-   blocks `claude.ai → localhost` requests unless you grant a per-session prompt,
+   blocks `Codex.ai → localhost` requests unless you grant a per-session prompt,
    so by default the snippet **downloads** a `usage-*.jsonl` file. Ingest it with:
    ```bash
    node import.js                 # auto-imports usage-*.jsonl from ~/Downloads
@@ -98,8 +98,8 @@ belong to**, and records a snapshot.
 
 1. **Get the snippet** (kept out of git): open `usage-logger.bookmarklet.txt`,
    make a bookmark, paste the `javascript:` line as its URL. (Or paste
-   `usage-logger.js` into the DevTools console on claude.ai.)
-2. Click the bookmark while on `claude.ai` — a usage table prints to the console,
+   `usage-logger.js` into the DevTools console on Codex.ai.)
+2. Click the bookmark while on `Codex.ai` — a usage table prints to the console,
    and a snapshot is logged (POST) or downloaded.
 3. If downloaded: `node import.js`.
 
