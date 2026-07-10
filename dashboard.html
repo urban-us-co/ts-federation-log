@@ -68,6 +68,8 @@
   .drop{border:1.5px dashed var(--border);border-radius:12px;padding:26px;text-align:center;color:var(--muted)}
   .drop.hot{border-color:var(--accent);color:var(--fg)}
   .note{color:var(--faint);font-size:11.5px;margin-top:8px}
+  .minirow{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin:8px 0 14px}
+  .minirow b{color:var(--fg);font-variant-numeric:tabular-nums}
   code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
 </style>
 </head>
@@ -99,6 +101,30 @@
     <h2 id="ts-title">Over time</h2>
     <div class="chartbox"><div id="chart"></div></div>
     <div class="note">Hover the chart for exact values. Click a series chip to toggle it. % limits share a 0–100 axis; spend ($) gets its own axis.</div>
+  </div>
+
+  <div id="session-app">
+    <h2>Session usage over time <span style="text-transform:none;color:var(--faint);font-weight:400" id="session-state"></span></h2>
+    <div class="toolbar">
+      <div><label>Metric</label>
+        <select id="session-metric">
+          <option value="tokens">Tokens</option>
+          <option value="cost">Cost ($)</option>
+        </select>
+      </div>
+      <div><label>Entrypoint</label>
+        <select id="session-entrypoint">
+          <option value="all">All</option>
+          <option value="claude-desktop">Cowork</option>
+          <option value="cli">CLI</option>
+        </select>
+      </div>
+    </div>
+    <div class="chartbox">
+      <div class="minirow" id="session-summary"></div>
+      <div id="session-chart"><div class="empty">Loading <code>data/session-usage-log.jsonl</code> ...</div></div>
+    </div>
+    <div class="note">Session rows are anonymized, closed-hour buckets. Cowork maps to <code>claude-desktop</code>; CLI maps to <code>cli</code>.</div>
   </div>
 </div>
 
@@ -323,6 +349,80 @@ fetch('data/usage-log.jsonl?_='+Date.now())
   .then(r=>{if(!r.ok)throw new Error(r.status);return r.text();})
   .then(t=>{const rows=parseJsonl(t);if(!rows.length)throw new Error('empty');boot(rows);})
   .catch(()=>showDrop('Could not auto-load the log — load it manually below.'));
+
+// ---- session usage: public token/cost buckets from local transcript scans ----
+let SESSION_ROWS=[];
+function parseSessionJsonl(text){
+  return text.split('\n').map(l=>l.trim()).filter(Boolean).map(l=>{
+    try{return JSON.parse(l);}catch(e){return null;}
+  }).filter(Boolean).filter(r=>r.ts_hour && r.recorded_by==='session-scan');
+}
+function sessionValue(r,metric){
+  if(metric==='cost') return r.cost_usd==null?0:+r.cost_usd;
+  return +(r.input_tokens||0)+ +(r.output_tokens||0)+ +(r.cache_read_tokens||0)+ +(r.cache_creation_tokens||0);
+}
+function bootSession(rows){
+  SESSION_ROWS=rows.sort((a,b)=>new Date(a.ts_hour)-new Date(b.ts_hour));
+  document.getElementById('session-state').textContent=rows.length?`· ${rows.length} rows`:'· empty log';
+  document.getElementById('session-metric').onchange=renderSession;
+  document.getElementById('session-entrypoint').onchange=renderSession;
+  renderSession();
+}
+function renderSession(){
+  const metric=document.getElementById('session-metric').value;
+  const entry=document.getElementById('session-entrypoint').value;
+  const rows=SESSION_ROWS.filter(r=>entry==='all'||r.entrypoint===entry);
+  const host=document.getElementById('session-chart');
+  const summary=document.getElementById('session-summary');
+  if(!rows.length){
+    summary.innerHTML='';
+    host.innerHTML='<div class="empty">No session usage rows for this selection yet.</div>';
+    return;
+  }
+  const buckets=new Map();
+  for(const r of rows){
+    const k=r.ts_hour;
+    if(!buckets.has(k)) buckets.set(k,{ts:k,tokens:0,cost:0,turns:0});
+    const b=buckets.get(k);
+    b.tokens+=sessionValue(r,'tokens');
+    b.cost+=sessionValue(r,'cost');
+    b.turns+=r.turns||0;
+  }
+  const pts=[...buckets.values()].sort((a,b)=>new Date(a.ts)-new Date(b.ts));
+  const totalTokens=pts.reduce((s,p)=>s+p.tokens,0);
+  const totalCost=pts.reduce((s,p)=>s+p.cost,0);
+  const totalTurns=pts.reduce((s,p)=>s+p.turns,0);
+  summary.innerHTML=`<span>Rows <b>${rows.length}</b></span><span>Turns <b>${totalTurns}</b></span>`+
+    `<span>Tokens <b>${Math.round(totalTokens).toLocaleString()}</b></span><span>Cost <b>$${totalCost.toFixed(4)}</b></span>`;
+  drawSessionChart(host,pts,metric);
+}
+function drawSessionChart(host,pts,metric){
+  const W=1120,H=300,P={l:58,r:18,t:14,b:34};
+  let tmin=+new Date(pts[0].ts),tmax=+new Date(pts[pts.length-1].ts);
+  if(tmin===tmax){tmin-=36e5;tmax+=36e5;}
+  const vals=pts.map(p=>metric==='cost'?p.cost:p.tokens);
+  const vmax=Math.max(1,Math.max(...vals))*1.15;
+  const X=t=>P.l+(t-tmin)/(tmax-tmin)*(W-P.l-P.r);
+  const Y=v=>P.t+(1-v/vmax)*(H-P.t-P.b);
+  const d=pts.map((p,i)=>`${i?'L':'M'}${X(+new Date(p.ts)).toFixed(1)} ${Y(vals[i]).toFixed(1)}`).join(' ');
+  const yvals=[0,vmax*.25,vmax*.5,vmax*.75,vmax];
+  let g='';
+  yvals.forEach(v=>{const y=Y(v),label=metric==='cost'?'$'+v.toFixed(2):Math.round(v).toLocaleString();
+    g+=`<line class="gtick" x1="${P.l}" y1="${y}" x2="${W-P.r}" y2="${y}"/>`+
+       `<text class="axis" x="${P.l-8}" y="${y+4}" text-anchor="end">${label}</text>`;});
+  pts.forEach((p,i)=>{g+=`<text class="axis" x="${X(+new Date(p.ts))}" y="${H-P.b+18}" text-anchor="middle">${fmtTick(+new Date(p.ts))}</text>`;});
+  const dots=pts.map((p,i)=>`<circle class="dot" cx="${X(+new Date(p.ts)).toFixed(1)}" cy="${Y(vals[i]).toFixed(1)}" r="4" fill="${PALETTE[0]}"/>`).join('');
+  host.innerHTML=`<svg viewBox="0 0 ${W} ${H}">
+    ${g}
+    <line class="gtick" x1="${P.l}" y1="${H-P.b}" x2="${W-P.r}" y2="${H-P.b}"/>
+    <path class="dataline" stroke="${PALETTE[0]}" d="${d}"/>
+    ${dots}
+  </svg>`;
+}
+fetch('data/session-usage-log.jsonl?_='+Date.now())
+  .then(r=>{if(!r.ok)throw new Error(r.status);return r.text();})
+  .then(t=>bootSession(parseSessionJsonl(t)))
+  .catch(()=>bootSession([]));
 </script>
 </body>
 </html>
