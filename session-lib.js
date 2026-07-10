@@ -1,9 +1,16 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { execFileSync } = require('child_process');
 const { anonId, scrubEmail } = require('./lib');
 
 const DEFAULT_PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
+const PRICING = [
+  { prefix: 'claude-opus-4', input: 15, output: 75 },
+  { prefix: 'claude-sonnet-4', input: 3, output: 15 },
+  { prefix: 'claude-sonnet-5', input: 3, output: 15 },
+  { prefix: 'claude-haiku-4', input: 1, output: 5 },
+];
 
 function readJsonl(file) {
   const out = [];
@@ -120,11 +127,147 @@ function parseTranscript(file) {
 function scanTranscripts(root = process.env.TS_PROJECTS_DIR || DEFAULT_PROJECTS_DIR) {
   return listFiles(root, (file) => file.endsWith('.jsonl') && !file.endsWith('.meta.json'))
     .flatMap(parseTranscript)
+    .map((turn) => ({ ...turn, cost_usd: priceUSD(turn) }))
     .sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)) || a.request_id.localeCompare(b.request_id));
 }
 
+function resolveIdentity() {
+  if (process.env.TS_FED_IDENTITY) return process.env.TS_FED_IDENTITY;
+  try {
+    const email = execFileSync('git', ['config', 'user.email'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    if (email) return email;
+  } catch { /* fall through */ }
+  const user = os.userInfo().username || 'unknown';
+  return `${user}@${os.hostname()}`;
+}
+
+function priceUSD(turn) {
+  const price = PRICING.find((row) => String(turn.model || '').startsWith(row.prefix));
+  if (!price) return null;
+  const total =
+    (turn.input_tokens || 0) * price.input +
+    (turn.output_tokens || 0) * price.output +
+    (turn.cache_read_tokens || 0) * 0.1 * price.input +
+    (turn.cache_creation_5m_tokens || 0) * 1.25 * price.input +
+    (turn.cache_creation_1h_tokens || 0) * 2 * price.input;
+  return total / 1e6;
+}
+
+function redactLabel(name) {
+  if (!name) return null;
+  const label = String(name);
+  return label.includes(':') ? `x:${anonId(label)}` : label;
+}
+
+function categorize(turn) {
+  if (turn.attribution_skill) return { category: 'skill', label: turn.attribution_skill };
+  if (turn.attribution_mcp_server || turn.attribution_mcp_tool) {
+    return { category: 'mcp', label: `mcp/${turn.attribution_mcp_server || 'unknown'}/${turn.attribution_mcp_tool || 'unknown'}` };
+  }
+  return { category: 'direct', label: 'direct' };
+}
+
+function hour(ts) {
+  const d = new Date(ts);
+  d.setUTCMinutes(0, 0, 0);
+  return d.toISOString().replace('.000Z', 'Z');
+}
+
+function publicLabel(turn, cat) {
+  if (cat.category === 'mcp') {
+    return `mcp/${anonId(turn.attribution_mcp_server || 'unknown')}/${anonId(turn.attribution_mcp_tool || 'unknown')}`;
+  }
+  return redactLabel(cat.label);
+}
+
+function toPublicRow(turn, identity = resolveIdentity()) {
+  const cat = categorize(turn);
+  return {
+    ts_hour: hour(turn.timestamp),
+    recorded_by: 'session-scan',
+    user_id: anonId(identity),
+    session_id: anonId(turn.session_id),
+    entrypoint: turn.entrypoint || null,
+    query_source: turn.query_source || 'main',
+    agent_type: redactLabel(turn.agent_type),
+    model: turn.model || null,
+    category: cat.category,
+    label: publicLabel(turn, cat),
+    input_tokens: turn.input_tokens || 0,
+    output_tokens: turn.output_tokens || 0,
+    cache_read_tokens: turn.cache_read_tokens || 0,
+    cache_creation_tokens: turn.cache_creation_tokens || 0,
+    cost_usd: turn.cost_usd,
+    turns: 1,
+  };
+}
+
+function publicDedupeKey(row) {
+  return [
+    row.user_id,
+    row.session_id,
+    row.ts_hour,
+    row.entrypoint,
+    row.query_source,
+    row.agent_type,
+    row.model,
+    row.category,
+    row.label,
+  ].join('|');
+}
+
+function rollupClosedHours(turns, now = new Date(), identity = resolveIdentity()) {
+  const currentHour = hour(now);
+  const groups = new Map();
+  for (const turn of turns) {
+    const row = toPublicRow(turn, identity);
+    if (!row.ts_hour || row.ts_hour >= currentHour) continue;
+    const key = publicDedupeKey(row);
+    if (!groups.has(key)) groups.set(key, { ...row });
+    else {
+      const prev = groups.get(key);
+      prev.input_tokens += row.input_tokens;
+      prev.output_tokens += row.output_tokens;
+      prev.cache_read_tokens += row.cache_read_tokens;
+      prev.cache_creation_tokens += row.cache_creation_tokens;
+      prev.cost_usd = prev.cost_usd == null || row.cost_usd == null ? null : prev.cost_usd + row.cost_usd;
+      prev.turns += 1;
+    }
+  }
+  return [...groups.values()]
+    .map((row) => ({ ...row, cost_usd: row.cost_usd == null ? null : Number(row.cost_usd.toFixed(6)) }))
+    .sort((a, b) => publicDedupeKey(a).localeCompare(publicDedupeKey(b)));
+}
+
+function validateRows(rows) {
+  const violations = [];
+  rows.forEach((row, i) => {
+    const text = JSON.stringify(row);
+    if (/[\w.+-]+@[\w.-]+\.\w+/.test(text)) violations.push({ index: i, field: '*', reason: 'email' });
+    if (row.label && row.label.includes(':') && !String(row.label).startsWith('x:')) {
+      violations.push({ index: i, field: 'label', reason: 'unhashed-colon-label' });
+    }
+    if (row.agent_type && row.agent_type.includes(':') && !String(row.agent_type).startsWith('x:')) {
+      violations.push({ index: i, field: 'agent_type', reason: 'unhashed-colon-label' });
+    }
+    if (row.category === 'mcp' && !/^mcp\/[0-9a-f]{12}\/[0-9a-f]{12}$/.test(String(row.label))) {
+      violations.push({ index: i, field: 'label', reason: 'unhashed-mcp-label' });
+    }
+  });
+  return violations;
+}
+
 module.exports = {
+  PRICING,
   scanTranscripts,
+  resolveIdentity,
+  priceUSD,
+  redactLabel,
+  categorize,
+  toPublicRow,
+  rollupClosedHours,
+  validateRows,
+  publicDedupeKey,
   anonId,
   scrubEmail,
 };
