@@ -10,6 +10,7 @@ const PRICING = [
   { prefix: 'claude-sonnet-4', input: 3, output: 15 },
   { prefix: 'claude-sonnet-5', input: 3, output: 15 },
   { prefix: 'claude-haiku-4', input: 1, output: 5 },
+  { prefix: 'claude-fable-5', input: 10, output: 50 },
 ];
 
 function readJsonl(file) {
@@ -143,7 +144,15 @@ function resolveIdentity() {
 
 function priceUSD(turn) {
   const price = PRICING.find((row) => String(turn.model || '').startsWith(row.prefix));
-  if (!price) return null;
+  if (!price) {
+    // Unpriced model with no billable tokens (e.g. `<synthetic>` turns) costs $0;
+    // a genuinely unpriced model that DID consume tokens stays null (honestly unknown).
+    const billable =
+      (turn.input_tokens || 0) + (turn.output_tokens || 0) +
+      (turn.cache_read_tokens || 0) + (turn.cache_creation_5m_tokens || 0) +
+      (turn.cache_creation_1h_tokens || 0);
+    return billable === 0 ? 0 : null;
+  }
   const total =
     (turn.input_tokens || 0) * price.input +
     (turn.output_tokens || 0) * price.output +

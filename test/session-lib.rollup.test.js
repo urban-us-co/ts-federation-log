@@ -21,7 +21,12 @@ test('priceUSD prices known model prefixes and returns null for unknown models',
   assert.equal(priceUSD(expensive), 140.25);
   assert.equal(priceUSD({ ...expensive, model: 'claude-sonnet-4-1', cache_read_tokens: 0, cache_creation_5m_tokens: 0, cache_creation_1h_tokens: 0 }), 18);
   assert.equal(priceUSD({ ...expensive, model: 'claude-haiku-4', cache_read_tokens: 0, cache_creation_5m_tokens: 0, cache_creation_1h_tokens: 0 }), 6);
-  assert.equal(priceUSD({ ...expensive, model: 'claude-fable-5' }), null);
+  // Fable 5: 10 input + 50 output + 1 cache-read + 12.5 cw5m + 20 cw1h per 1M each = 93.5
+  assert.equal(priceUSD({ ...expensive, model: 'claude-fable-5' }), 93.5);
+  // Genuinely unknown model that consumed tokens stays null (honestly unknown).
+  assert.equal(priceUSD({ ...expensive, model: 'claude-unknown-9' }), null);
+  // Unknown model with zero billable tokens (e.g. `<synthetic>`) costs $0, not null.
+  assert.equal(priceUSD({ model: '<synthetic>', input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_creation_5m_tokens: 0, cache_creation_1h_tokens: 0 }), 0);
 });
 
 test('redactLabel hashes namespaced labels and keeps bare labels', () => {
