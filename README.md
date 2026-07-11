@@ -119,13 +119,48 @@ One JSON object per line — each self-identifies the user and org:
 | `extra_usage_enabled` | whether extra usage is on |
 | `raw` | the full untouched `/usage` payload (future-proofing) |
 
+## Session Usage Dataset
+
+`data/session-usage-log.jsonl` is a second public time series. It is produced
+from local Claude Code / Cowork transcripts under `~/.claude/projects`, not from
+Codex.ai browser usage pages.
+
+The local tool can show clear, private labels before anything is committed:
+
+```bash
+node session-usage.js report --by=skill
+node session-usage.js report --by=model
+```
+
+To append public rows:
+
+```bash
+node session-usage.js import
+node session-usage.js validate data/session-usage-log.jsonl
+```
+
+`import` only emits closed-hour buckets and de-dupes by user, session, hour,
+entrypoint, source, agent type, model, category, and label. Set
+`TS_FED_IDENTITY` to your claude.ai email if you want the hashed `user_id` to
+match rows in `data/usage-log.jsonl`.
+
+Privacy split:
+
+- Local report: full labels stay on your machine for debugging.
+- Public dataset: namespaced skill labels are hashed, all MCP server/tool labels
+  are hashed, session ids are hashed, and raw emails are rejected by validation.
+- Public fields keep `model` and `entrypoint` in clear so Cowork
+  (`claude-desktop`) and CLI usage can be compared.
+
 ## Dashboard
 
 `dashboard.html` is a self-contained (no-dependency) viewer for the log:
 current-state indicator cards per user×org (5-hour / weekly / Sonnet / spend,
 colored by severity) plus an interactive time-series chart with a metric
-selector, per-series toggles, and hover tooltips. Serve the repo so it can
-fetch the tracked log, then open `/dashboard.html`:
+selector, per-series toggles, and hover tooltips. It also loads
+`data/session-usage-log.jsonl` for token/cost-over-time charts with a Cowork/CLI
+entrypoint toggle. Serve the repo so it can fetch the tracked logs, then open
+`/dashboard.html`:
 
 ```bash
 python3 -m http.server 8801   # then visit http://localhost:8801/dashboard.html
@@ -142,10 +177,13 @@ onto the page (or use the browse link) instead.
 | `import.js` | yes | ingest downloaded snapshots into the log |
 | `dashboard.html` | yes | no-dependency viewer — indicators + time-series chart |
 | `lib.js` | yes | shared flatten / dedupe helpers |
+| `session-lib.js` | yes | transcript scan, pricing, redaction, and rollup engine |
+| `session-usage.js` | yes | local transcript usage report/import/validate CLI |
 | `package.json` | yes | `npm start`, `npm run import` |
 | `usage-logger.js` | **no** (gitignored) | the browser snippet |
 | `usage-logger.bookmarklet.txt` | **no** (gitignored) | one-line bookmarklet |
 | `data/usage-log.jsonl` | yes | the usage log — shared publicly via this repo |
+| `data/session-usage-log.jsonl` | yes | anonymized, closed-hour session usage log |
 
 ## Notes / caveats
 
