@@ -30,13 +30,17 @@ person's ledger out of this file.
 | `collector.js` | optional local HTTP collector (`:8787`) for direct POST from the browser |
 | `session-lib.js` | transcript engine: streaming reader, group lines by `requestId`, subagents rolled under the parent session, Claude Code + Cowork scan, pricing, redaction, closed-hour rollup, validation |
 | `ledger.js` | PRIVATE: Cowork session metadata (labelling fields only) → per-turn `task`/`step`/`tier` labels |
-| `offload.js` | PRIVATE: `summarize` (totals, weekly, top tasks/steps, limit events, candidates), `savingsEstimate`, `dashboardFiles` |
+| `score.js` | offload rules (`RULES`, `candidates`, `savingsEstimate`), UMD: used by `offload.js` in Node AND uploaded as the Dashboard's `files/score.js` — one implementation |
+| `offload.js` | PRIVATE: `summarize` (fixed-window summary for the CLI), `dashboardFiles` (v1 files, kept for the CLI) |
+| `facts.js` | PRIVATE: `buildFacts` → hour-grain fact rows + session-day rows; label policy `clear`/`hashed` (HMAC with the person's own salt; MCP steps keep `read`/`act`/`interactive` so rules still work) |
+| `sync.js` | multitenant: `push` (encrypt closed days to `tenants/<tenant>/<machine>/<day>.enc`), `collect` (owner decrypts + merges), `init-recipient`, `init-tenant`, `fingerprint`, `verify` |
 | `session-usage.js` | CLI: `report --by=skill|mcp|model|session|source|account` · `import` (public) · `validate` · `ledger` (private → `local/`) |
 | `dashboard.html` | public zero-dep viewer (GitHub Pages) |
 | `.claude/skills/log-usage/` (+ `.agents/` copy) | browser gather → `scripts/log_and_push.sh` (PII gate → commit → push or fork+PR) |
-| `.claude/skills/log-session-usage/` | `log_and_push_sessions.sh` (import → validate → PII gate → push), `scripts/sweep.sh` (hourly), `com.thirdsphere.federation-sweep.plist` |
-| `local/` (gitignored) | `ledger.jsonl`, `summary.json`, `dashboard/*.json`, `identity`, `sweep.log` |
-| `test/` | `node --test` — 35 tests |
+| `.claude/skills/log-session-usage/` | `log_and_push_sessions.sh` (import → validate → staged-file gate → envelope verify → PII gate → push), `scripts/sweep.sh` (hourly), `scripts/onboard.sh`, `SETUP-NEW-MACHINE.md`, `com.thirdsphere.federation-sweep.plist` |
+| `tenants/` (public, encrypted) | `recipient.pub.pem` + `<tenant>/<machine>/<YYYY-MM-DD>.enc` |
+| `local/` (gitignored) | `ledger.jsonl`, `summary.json`, `dashboard/{facts.csv,sessions.csv,tenants.json}`, `identity`, `tenant.json` (machine id + salt + pinned fingerprint), `recipient.key.pem` (owner only), `sweep.log` |
+| `test/` | `node --test` — 44 tests |
 
 Governing spec for the browser snapshot task: `~/Projects/specs/specs/federation-usage-log-hourly.md`
 (owner roscel; invariants: raw snapshot outside repo, append-only, PII gate, skip-is-reported).
@@ -77,14 +81,53 @@ published before 2026-11-04 carry the old Opus 4.x price.
 ## Running it
 
 - **Hourly, no tokens** — launchd `com.thirdsphere.federation-sweep` runs
-  `sweep.sh`: pull --rebase → public closed-hour import/validate/PII gate/push →
-  private `ledger` rebuild. Identity comes from `TS_FED_IDENTITY` or `local/identity`
-  (must stay constant or the public series splits). Log: `local/sweep.log`.
+  `sweep.sh`: pull --rebase → `ledger` rebuild → `sync.js push` (stages this
+  machine's new closed days) → helper (public closed-hour import, gates, one commit,
+  push) → `sync.js collect` on the machine holding `local/recipient.key.pem`.
+  Identity from `TS_FED_IDENTITY` or `local/identity` (must stay constant or the
+  public series splits). Log: `local/sweep.log`.
 - **Every 4 hours (Cowork scheduled task `federation-usage-snapshot-4h`)** — Part A:
   claude.ai limits snapshot via Claude in Chrome → `log_and_push.sh`. Part B (at most
-  daily): re-upload `local/dashboard/*.json` to the private Dashboard and repoint
-  its datasets, deleting the previous files.
-- By hand: `node session-usage.js report --by=account`, `node session-usage.js ledger --top=20`.
+  daily): upload `facts.csv`, `sessions.csv`, `tenants.json` to the private
+  Dashboard, repoint its three datasets, delete the previous files.
+- **New machine / person** — `SETUP-NEW-MACHINE.md` prompt → `onboard.sh`.
+- By hand: `node session-usage.js report --by=account`, `node session-usage.js ledger --top=20`,
+  `node sync.js collect`.
+
+## Multitenant sync (2026-11)
+
+- **Why encrypted in the public repo**: chosen over a private repo (owner's call).
+  Asymmetric, so contributors share no secret: each machine encrypts to the owner's
+  RSA-4096 public key; only `local/recipient.key.pem` decrypts. **Back that key up**
+  (e.g. a password manager): losing it makes every other machine's history unreadable;
+  replacing it needs every machine to re-pin the new fingerprint.
+- Envelope: RSA-OAEP-SHA256-wrapped AES-256-GCM key, gzip(JSON) body, header
+  (`v, kid, tenant, machine, day`) bound as AAD. `verify` accepts only that exact shape.
+- **Pinning**: `onboard.sh` refuses unless `tenants/recipient.pub.pem` matches the
+  fingerprint given out of band; `push` re-checks it every run, so a swapped key in
+  the repo stops pushes instead of encrypting to someone else.
+- **Append-only days**: only closed UTC days, each written once (~11 KB). The owner's
+  own machine pushes too (encrypted backup) but `collect` uses its local ledger for
+  itself, so today is live for the owner and other machines arrive a day behind.
+- **Labels**: other people are `hashed` (owner's decision: always hashed). HMAC-SHA256
+  with a per-person salt in `local/tenant.json`, so guessing likely task names and
+  hashing them doesn't reveal anything. Built-in tool names and bare subagent types
+  stay readable; connector tool names collapse to `mcp`; MCP steps keep
+  `read`/`act`/`interactive`. The owner's machines are `clear`.
+- **Limits**: a machine without push access would open a PR every hour — onboarding
+  requires collaborator access. Rows the PR flow would need are not handled.
+
+## Dashboard v2 (2026-11)
+
+Datasets `facts` (CSV, ~29K rows / 6 MB for 5 months on one machine), `sessions`
+(CSV), `tenants` (JSON); page files `index.html` + `score.js`. All filtering is in
+the page, in the viewer's local time: date presets + from/to, time-of-day range
+(wraps past midnight), weekdays/weekends, session type (Scheduled / On demand /
+Dispatched / Claude Code), person, account. Filters are `dash.setParams` names no
+query uses, so they redraw without refetching. Sessions are counted from
+session-day rows by start time. Candidates are re-scored on the filtered rows with
+the same `score.js` the CLI uses; a Node harness run on real data matched the CLI
+(30 days: same cost to the dollar, sessions within 1, identical savings estimate).
 
 ## Offload rules (offload.js `RULES`)
 
@@ -115,6 +158,11 @@ Re-pricing assumes the same tokens on the cheaper model — a lead to test, not 
 - 2026-11-04 — reading other sessions' raw transcript/audit content into a chat was
   blocked by the auto-mode classifier; code that extracts only labels into the
   private ledger is the pattern to keep.
+
+- 2026-11-04 — Dashboard v2 with client-side filters (Option A) + multitenant sync
+  through this repo, encrypted (owner chose encrypted-in-public over a private repo,
+  and "always hashed" for other people). Recipient key fingerprint
+  `006d2850ff552a910b64664cb30c32cfd2b4f6c7c2a476cb10805c4ef6428f53`.
 
 ## Open items
 

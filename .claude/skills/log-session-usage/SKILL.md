@@ -48,5 +48,10 @@ you have push access, otherwise fork/branch/PR through `gh`.
 
 ## Schedule
 
-This can reuse the existing hourly `/schedule` cadence. Scheduled runs only need
-the local checkout and transcript files; no browser session is required.
+Preferred since 2026-11: the launchd job `com.thirdsphere.federation-sweep`
+(`scripts/sweep.sh`, hourly, no model tokens). It runs this helper, rebuilds the
+private ledger, and pushes this machine's encrypted closed days to `tenants/`
+(`node sync.js push`); the helper's gate only lets the public log and valid
+`tenants/**/*.enc` envelopes into a commit. Set a machine up with
+`scripts/onboard.sh`; the copy-paste prompt for a new machine or person is in
+`SETUP-NEW-MACHINE.md`.

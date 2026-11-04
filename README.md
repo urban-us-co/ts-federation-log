@@ -133,9 +133,19 @@ from local transcripts, not from claude.ai browser usage pages: Claude Code unde
 folder, labelled by task (scheduled task, Cowork session, Claude Code project) and
 step (subagent, skill, connector tool, built-in tools), plus `summary.json` with
 ranked offload candidates (local model, script, cheaper model, Codex, another
-account). None of it is committed. To run the public import and the ledger every
-hour with no model tokens, install the launchd sweep described in
-`.claude/skills/log-session-usage/com.thirdsphere.federation-sweep.plist`.
+account). None of it is committed in readable form. To run the public import and
+the ledger every hour with no model tokens, set the machine up with
+`.claude/skills/log-session-usage/scripts/onboard.sh` (copy-paste prompt in
+`.claude/skills/log-session-usage/SETUP-NEW-MACHINE.md`).
+
+### Encrypted detail in `tenants/`
+
+Each machine also commits one file per closed day under
+`tenants/<person>/<machine>/`, encrypted (RSA-OAEP + AES-256-GCM) to the
+dashboard owner's public key in `tenants/recipient.pub.pem`. Only the owner can
+read them, and other people's task, skill, connector and account names are
+HMAC-hashed with their own secret salt before encryption. `node sync.js verify`
+checks that a file is a bare envelope and nothing else.
 
 The local tool can show clear, private labels before anything is committed:
 

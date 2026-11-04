@@ -4,8 +4,9 @@
   Hourly ts-federation-log sweep: public session-usage rollup + private ledger.
   Reads local transcripts only, so it costs no model tokens.
 
-  Install (from the repo root, after writing your identity to local/identity):
-    sed "s#__REPO__#$(pwd)#g" .claude/skills/log-session-usage/com.thirdsphere.federation-sweep.plist \
+  Install: run .claude/skills/log-session-usage/scripts/onboard.sh (it fills
+  __REPO__ and __PATH__, writes your identity, and loads the job). By hand:
+    sed -e "s#__REPO__#$(pwd)#g" -e "s#__PATH__#$PATH#g" .claude/skills/log-session-usage/com.thirdsphere.federation-sweep.plist \
       > ~/Library/LaunchAgents/com.thirdsphere.federation-sweep.plist
     launchctl load ~/Library/LaunchAgents/com.thirdsphere.federation-sweep.plist
   Run now:   launchctl kickstart gui/$(id -u)/com.thirdsphere.federation-sweep
@@ -21,6 +22,12 @@
         <string>-lc</string>
         <string>exec "__REPO__/.claude/skills/log-session-usage/scripts/sweep.sh"</string>
     </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- launchd starts with a bare PATH; node, git and gh must be findable. -->
+        <key>PATH</key>
+        <string>__PATH__</string>
+    </dict>
     <key>StartInterval</key>
     <integer>3600</integer>
     <key>RunAtLoad</key>
