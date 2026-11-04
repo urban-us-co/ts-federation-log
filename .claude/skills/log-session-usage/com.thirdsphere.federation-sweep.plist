@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hourly ts-federation-log sweep: public session-usage rollup + private ledger.
+  Reads local transcripts only, so it costs no model tokens.
+
+  Install (from the repo root, after writing your identity to local/identity):
+    sed "s#__REPO__#$(pwd)#g" .claude/skills/log-session-usage/com.thirdsphere.federation-sweep.plist \
+      > ~/Library/LaunchAgents/com.thirdsphere.federation-sweep.plist
+    launchctl load ~/Library/LaunchAgents/com.thirdsphere.federation-sweep.plist
+  Run now:   launchctl kickstart gui/$(id -u)/com.thirdsphere.federation-sweep
+  Log:       __REPO__/local/sweep.log
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.thirdsphere.federation-sweep</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-lc</string>
+        <string>exec "__REPO__/.claude/skills/log-session-usage/scripts/sweep.sh"</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>3600</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>__REPO__/local/sweep.log</string>
+    <key>StandardErrorPath</key>
+    <string>__REPO__/local/sweep.log</string>
+</dict>
+</plist>

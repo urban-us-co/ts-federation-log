@@ -22,3 +22,6 @@ npm-debug.log*
 
 # PRIVATE usage ledger + summary (task titles, skill names) — never commit
 local/
+
+# Per-machine Claude settings (may hold an email)
+.claude/settings.local.json

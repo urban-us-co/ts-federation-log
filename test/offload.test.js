@@ -75,6 +75,30 @@ test('script-it only for API fetches, never shell/browser/desktop servers', () =
   assert.ok(!isScriptable('mcp:connector/slack_send_message'));
 });
 
+test('savings estimate does not double count a task and its own steps', () => {
+  const { savingsEstimate } = require('../offload');
+  assert.equal(savingsEstimate([
+    { task: 'a', step: null, est_savings_usd: 100 },
+    { task: 'a', step: 's1', est_savings_usd: 30 },
+    { task: 'a', step: 's2', est_savings_usd: 20 },
+    { task: 'b', step: 's1', est_savings_usd: 40 },
+    { task: 'b', step: 's2', est_savings_usd: 25 },
+    { task: 'b', step: null, est_savings_usd: 50 },
+  ]), 100 + 65);
+});
+
+test('dashboardFiles gives one flat row array per dataset', () => {
+  const { dashboardFiles } = require('../offload');
+  const s = summarize(many(30, { step: 'tools:Read', tool_names: ['Read'] }, 5), { now: NOW });
+  const f = dashboardFiles(s);
+  assert.deepEqual(Object.keys(f).sort(), ['candidates', 'steps', 'tasks', 'tiers', 'totals', 'weekly']);
+  assert.equal(f.totals.length, 1);
+  assert.equal(f.totals[0].scheduled_share, 1);
+  assert.equal(f.tasks[0].kind, 'sched');
+  assert.ok(f.candidates.every((c) => typeof c.step === 'string' && c.id));
+  assert.ok(Object.values(f).every((rows) => Array.isArray(rows) && rows.every((r) => r && typeof r === 'object')));
+});
+
 test('limit events surface with their task', () => {
   const s = summarize([row({ quota: { status: 'rejected', rate_limit_type: 'five_hour', is_using_overage: true } })], { now: NOW });
   assert.deepEqual(s.limit_events.map((e) => [e.task, e.status, e.is_using_overage]), [['sched:daily-x', 'rejected', true]]);

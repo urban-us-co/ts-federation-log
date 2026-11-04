@@ -1,6 +1,6 @@
 # ts-federation-log
 
-Log Codex.ai usage limits (5-hour window, weekly all-models, Sonnet-only,
+Log claude.ai usage limits (5-hour window, weekly all-models, Sonnet-only,
 extra-usage spend) to a local time-series that drives a
 dashboard or chart. Built to collect from **multiple users / orgs** into one log. 
 
@@ -19,7 +19,7 @@ To join, contribute your own snapshots:
    ```
 2. **Run the skill.** In Codex (with the `log-usage` skill — it lives in
    `.agents/skills/log-usage/` so it's available the moment you clone) just ask:
-   *"log my Codex usage"*. It reads your live Codex.ai session, anonymizes
+   *"log my Codex usage"*. It reads your live claude.ai session, anonymizes
    (hashes UUIDs/emails, scrubs names), appends a row per org, and contributes it.
 3. **How your data lands depends on your access:**
    - **Write access** → the row is committed and pushed straight to `main`.
@@ -31,7 +31,7 @@ To join, contribute your own snapshots:
    continuous signal, so participants contribute **hourly**. On first run the
    skill offers to set this up via Codex's **`/schedule`** feature as a
    recurring hourly task. Scheduled tasks run inside the open app with your
-   connected Chrome available, so they can read your logged-in Codex.ai session
+   connected Chrome available, so they can read your logged-in claude.ai session
    — just keep the app open and Chrome logged in (a run due while the app is
    closed happens on next launch). Click **"Run now"** once after creating the
    task to pre-approve the tools it uses. Setting this up on another machine?
@@ -58,13 +58,13 @@ or scrubbed at ingest (see `lib.js`), so the public log carries stable
 
 ## How it works
 
-The numbers shown on `Codex.ai` Settings → Usage come from an authenticated
+The numbers shown on `claude.ai` Settings → Usage come from an authenticated
 endpoint: `GET /api/organizations/{org_uuid}/usage`. A small browser snippet
 reads your live session (no stored cookie), pulls usage for **every org you
 belong to**, and records a snapshot.
 
 ```
-  Codex.ai (logged in)
+  claude.ai (logged in)
         │  usage-logger.js  (bookmarklet / console)
         │  fetch /api/account + /api/organizations/*/usage
         ▼
@@ -79,7 +79,7 @@ belong to**, and records a snapshot.
 ### Two ways the snapshot reaches the log
 
 1. **Download + import (reliable).** Chrome's *Local Network Access* protection
-   blocks `Codex.ai → localhost` requests unless you grant a per-session prompt,
+   blocks `claude.ai → localhost` requests unless you grant a per-session prompt,
    so by default the snippet **downloads** a `usage-*.jsonl` file. Ingest it with:
    ```bash
    node import.js                 # auto-imports usage-*.jsonl from ~/Downloads
@@ -98,8 +98,8 @@ belong to**, and records a snapshot.
 
 1. **Get the snippet** (kept out of git): open `usage-logger.bookmarklet.txt`,
    make a bookmark, paste the `javascript:` line as its URL. (Or paste
-   `usage-logger.js` into the DevTools console on Codex.ai.)
-2. Click the bookmark while on `Codex.ai` — a usage table prints to the console,
+   `usage-logger.js` into the DevTools console on claude.ai.)
+2. Click the bookmark while on `claude.ai` — a usage table prints to the console,
    and a snapshot is logged (POST) or downloaded.
 3. If downloaded: `node import.js`.
 
@@ -122,8 +122,20 @@ One JSON object per line — each self-identifies the user and org:
 ## Session Usage Dataset
 
 `data/session-usage-log.jsonl` is a second public time series. It is produced
-from local Claude Code / Cowork transcripts under `~/.claude/projects`, not from
-Codex.ai browser usage pages.
+from local transcripts, not from claude.ai browser usage pages: Claude Code under
+`~/.claude/projects` and Cowork under
+`~/Library/Application Support/Claude/local-agent-mode-sessions` (entrypoint
+`local-agent`). Set `TS_COWORK_DIR=off` to leave Cowork out.
+
+### Private ledger: where usage goes
+
+`node session-usage.js ledger` writes a per-turn ledger to the gitignored `local/`
+folder, labelled by task (scheduled task, Cowork session, Claude Code project) and
+step (subagent, skill, connector tool, built-in tools), plus `summary.json` with
+ranked offload candidates (local model, script, cheaper model, Codex, another
+account). None of it is committed. To run the public import and the ledger every
+hour with no model tokens, install the launchd sweep described in
+`.claude/skills/log-session-usage/com.thirdsphere.federation-sweep.plist`.
 
 The local tool can show clear, private labels before anything is committed:
 

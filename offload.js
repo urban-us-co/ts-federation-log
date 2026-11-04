@@ -138,6 +138,45 @@ function candidates(byTask, byTaskStep, totalCost, totalTokens) {
   return out.sort((a, b) => b.est_savings_usd - a.est_savings_usd || (b.token_share || 0) - (a.token_share || 0));
 }
 
+// Candidates overlap: a whole-task downshift and a step inside the same task
+// both count that step's cost. Per task take the larger of the task-level
+// saving and the sum of its step-level savings, so the headline isn't inflated.
+function savingsEstimate(cands) {
+  const perTask = new Map();
+  for (const c of cands) {
+    const t = perTask.get(c.task) || { whole: 0, steps: 0 };
+    if (c.step === null) t.whole = Math.max(t.whole, c.est_savings_usd || 0);
+    else t.steps += c.est_savings_usd || 0;
+    perTask.set(c.task, t);
+  }
+  let total = 0;
+  for (const t of perTask.values()) total += Math.max(t.whole, t.steps);
+  return round(total);
+}
+
+// Flat row files for the private Dashboard (one JSON array per dataset).
+function dashboardFiles(summary) {
+  const kindOf = (key) => key.split(':')[0];
+  return {
+    totals: [{ ...summary.totals, window_days: summary.window_days, since: summary.since.slice(0, 10), generated_at: summary.generated_at }],
+    weekly: summary.weekly,
+    tiers: summary.by_tier.map((t) => ({ tier: t.key, cost_usd: t.cost_usd, cost_share: t.cost_share, turns: t.turns, tokens: t.tokens })),
+    tasks: summary.top_tasks.map((t) => ({
+      task: t.key, kind: kindOf(t.key), title: t.title, sessions: t.sessions, turns: t.turns, cost_usd: t.cost_usd,
+      cost_share: t.cost_share, output_per_turn: t.output_per_turn, main_tier: t.main_tier, main_step: t.main_step,
+    })),
+    steps: summary.top_steps.map((t) => ({
+      step: t.key, sessions: t.sessions, turns: t.turns, cost_usd: t.cost_usd, cost_share: t.cost_share,
+      output_per_turn: t.output_per_turn, main_tier: t.main_tier,
+    })),
+    candidates: summary.candidates.map((c, i) => ({
+      id: `c${i + 1}`, rule: c.rule, target: c.target, task: c.task, step: c.step || '(whole task)', turns: c.turns,
+      cost_usd: c.cost_usd, est_target_cost_usd: c.est_target_cost_usd, est_savings_usd: c.est_savings_usd,
+      token_share: c.token_share ?? null, why: c.why,
+    })),
+  };
+}
+
 function summarize(rows, { now = new Date(), days = 30 } = {}) {
   const since = new Date(now.getTime() - days * 86400e3).toISOString();
   const windowRows = rows.filter((r) => r.ts && r.ts >= since);
@@ -172,21 +211,31 @@ function summarize(rows, { now = new Date(), days = 30 } = {}) {
   const ranked = (map, n) => [...map].map(([k, b]) => finish(k, b, totalCost)).sort((a, b) => b.cost_usd - a.cost_usd).slice(0, n);
   const taskTitle = new Map(windowRows.filter((r) => r.title).map((r) => [r.task, r.title]));
 
+  const cands = candidates(byTask, byTaskStep, totalCost, totalTokens);
+  let scheduledCost = 0;
+  for (const [task, b] of byTask) if (task.startsWith('sched:')) scheduledCost += b.cost;
+
   return {
     generated_at: now.toISOString(),
     window_days: days,
     since,
     note: 'Costs are API list prices (what this usage would cost on the API). On a subscription seat, cash cost is the seat plus any extra-usage charges.',
-    totals: { turns: windowRows.length, cost_usd: round(totalCost), tokens: totalTokens, sessions: new Set(windowRows.map((r) => r.session_id)).size },
+    totals: {
+      turns: windowRows.length, cost_usd: round(totalCost), tokens: totalTokens,
+      sessions: new Set(windowRows.map((r) => r.session_id)).size,
+      scheduled_cost_usd: round(scheduledCost),
+      scheduled_share: totalCost ? round(scheduledCost / totalCost, 4) : 0,
+      savings_estimate_usd: savingsEstimate(cands),
+    },
     by_account: ranked(bySource, 20),
     by_tier: ranked(byTier, 10),
     weekly: [...weekly.values()].map((w) => ({ ...w, cost_usd: round(w.cost_usd) })).sort((a, b) => a.week.localeCompare(b.week) || a.source.localeCompare(b.source)),
     top_tasks: ranked(byTask, 40).map((t) => ({ ...t, title: taskTitle.get(t.key) || null })),
     top_steps: ranked(byStep, 40),
     limit_events: windowRows.filter((r) => r.quota).map((r) => ({ ts: r.ts, task: r.task, ...r.quota })),
-    candidates: candidates(byTask, byTaskStep, totalCost, totalTokens),
+    candidates: cands,
     rules: { ...RULES, readLikeMcp: String(RULES.readLikeMcp), interactiveMcpServers: String(RULES.interactiveMcpServers) },
   };
 }
 
-module.exports = { summarize, RULES, isMechanical, isCoding, isScriptable, weekOf, tokensOf };
+module.exports = { summarize, dashboardFiles, savingsEstimate, RULES, isMechanical, isCoding, isScriptable, weekOf, tokensOf };

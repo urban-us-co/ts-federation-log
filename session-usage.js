@@ -134,10 +134,17 @@ function ledger(opts) {
   const now = process.env.SESSION_USAGE_NOW ? new Date(process.env.SESSION_USAGE_NOW) : new Date();
   const summary = summarize(rows, { now, days: Number(opts.days) || 30 });
   fs.writeFileSync(path.join(dir, 'summary.json'), JSON.stringify(summary, null, 2) + '\n');
+  // One row file per Dashboard dataset (uploaded by the refresh routine).
+  const dashDir = path.join(dir, 'dashboard');
+  fs.mkdirSync(dashDir, { recursive: true });
+  for (const [id, rows] of Object.entries(require('./offload').dashboardFiles(summary))) {
+    fs.writeFileSync(path.join(dashDir, `${id}.json`), JSON.stringify(rows) + '\n');
+  }
   const labelled = rows.filter((r) => r.source !== 'cowork' || r.task_kind !== 'interactive' || !r.task.endsWith(':untitled')).length;
   console.log(`Ledger: ${rows.length} turn(s), ${labelled} with a task label -> ${dir}`);
   console.log(`Window ${summary.window_days}d: $${summary.totals.cost_usd} API-priced, ${summary.candidates.length} offload candidate(s).`);
-  for (const c of summary.candidates.slice(0, Number(opts.top) || 10)) {
+  const top = opts.top === undefined ? 10 : Number(opts.top) || 0;
+  for (const c of summary.candidates.slice(0, top)) {
     console.log(`  [${c.rule}] ${c.task}${c.step ? ` / ${c.step}` : ''} -> ${c.target}: $${c.cost_usd} -> $${c.est_target_cost_usd}`);
   }
 }
