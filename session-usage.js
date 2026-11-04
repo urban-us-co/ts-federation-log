@@ -116,13 +116,40 @@ function validateFile(file) {
   console.log(`Validated ${rows.length} row(s).`);
 }
 
+// PRIVATE: per-turn ledger + summary (task/step labels in clear). Written to
+// LEDGER_DIR (default ./local, gitignored) and never to data/.
+function ledger(opts) {
+  const { buildLedger, coworkSessionMeta } = require('./ledger');
+  const { summarize } = require('./offload');
+  const { coworkRootFor } = require('./session-lib');
+  const dir = path.resolve(process.env.LEDGER_DIR || path.join(__dirname, 'local'));
+  if (path.relative(path.join(__dirname, 'data'), dir).split(path.sep)[0] !== '..') {
+    console.error('refusing to write the private ledger under data/ (public).');
+    process.exit(2);
+  }
+  fs.mkdirSync(dir, { recursive: true });
+  const meta = coworkSessionMeta(coworkRootFor());
+  const rows = buildLedger(scanAllSources(), meta);
+  fs.writeFileSync(path.join(dir, 'ledger.jsonl'), rows.map((r) => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : ''));
+  const now = process.env.SESSION_USAGE_NOW ? new Date(process.env.SESSION_USAGE_NOW) : new Date();
+  const summary = summarize(rows, { now, days: Number(opts.days) || 30 });
+  fs.writeFileSync(path.join(dir, 'summary.json'), JSON.stringify(summary, null, 2) + '\n');
+  const labelled = rows.filter((r) => r.source !== 'cowork' || r.task_kind !== 'interactive' || !r.task.endsWith(':untitled')).length;
+  console.log(`Ledger: ${rows.length} turn(s), ${labelled} with a task label -> ${dir}`);
+  console.log(`Window ${summary.window_days}d: $${summary.totals.cost_usd} API-priced, ${summary.candidates.length} offload candidate(s).`);
+  for (const c of summary.candidates.slice(0, Number(opts.top) || 10)) {
+    console.log(`  [${c.rule}] ${c.task}${c.step ? ` / ${c.step}` : ''} -> ${c.target}: $${c.cost_usd} -> $${c.est_target_cost_usd}`);
+  }
+}
+
 function main(argv = process.argv.slice(2)) {
   const cmd = argv[0] || 'report';
   const opts = parseOptions(argv.slice(1));
   if (cmd === 'report') return report(opts);
   if (cmd === 'import') return importRows();
   if (cmd === 'validate') return validateFile(opts._[0]);
-  console.error('usage: node session-usage.js <report|import|validate> [options]');
+  if (cmd === 'ledger') return ledger(opts);
+  console.error('usage: node session-usage.js <report|import|validate|ledger> [options]');
   process.exit(1);
 }
 

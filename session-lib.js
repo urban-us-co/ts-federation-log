@@ -255,10 +255,15 @@ function scanCowork(root = process.env.TS_COWORK_DIR || DEFAULT_COWORK_DIR) {
 
 // All local sources. An explicit TS_PROJECTS_DIR without TS_COWORK_DIR means
 // "scan only that tree" — keeps tests and ad-hoc runs from touching real Cowork data.
+function coworkRootFor(env = process.env) {
+  if (env.TS_COWORK_DIR === 'off') return null;
+  return env.TS_COWORK_DIR || (env.TS_PROJECTS_DIR ? null : DEFAULT_COWORK_DIR);
+}
+
 function scanAllSources(env = process.env) {
   const turns = scanTranscripts(env.TS_PROJECTS_DIR || DEFAULT_PROJECTS_DIR);
-  const coworkRoot = env.TS_COWORK_DIR || (env.TS_PROJECTS_DIR ? null : DEFAULT_COWORK_DIR);
-  if (coworkRoot && env.TS_COWORK_DIR !== 'off') turns.push(...scanCowork(coworkRoot));
+  const coworkRoot = coworkRootFor(env);
+  if (coworkRoot) turns.push(...scanCowork(coworkRoot));
   return turns.sort(byTime);
 }
 
@@ -404,6 +409,7 @@ module.exports = {
   scanTranscripts,
   scanCowork,
   scanAllSources,
+  coworkRootFor,
   resolveIdentity,
   priceUSD,
   redactLabel,
