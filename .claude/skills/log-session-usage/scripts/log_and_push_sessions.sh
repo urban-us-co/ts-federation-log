@@ -36,6 +36,21 @@ ROWS=$(grep -c '' "$LOG" 2>/dev/null || echo 0)
 STAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 git add "$LOG"
+
+# Only the public session log and encrypted tenant day files (staged by
+# `node sync.js push` in sweep.sh) may ride along in this commit.
+UNEXPECTED=$(git diff --cached --name-only | grep -vE '^(data/session-usage-log\.jsonl|tenants/[0-9a-f]{12}/[0-9a-f]{12}/[0-9]{4}-[0-9]{2}-[0-9]{2}\.enc)$' || true)
+if [ -n "$UNEXPECTED" ]; then
+  echo "ABORT: unexpected staged file(s), not committing:" >&2
+  printf '  %s\n' $UNEXPECTED >&2
+  exit 2
+fi
+ENC=$(git diff --cached --name-only | grep '\.enc$' || true)
+if [ -n "$ENC" ] && ! node sync.js verify $ENC; then
+  echo "ABORT: a staged tenant file is not a valid encrypted envelope — not committing." >&2
+  exit 2
+fi
+
 if git diff --cached --quiet; then
   echo "no new session-usage rows to commit."
   exit 0

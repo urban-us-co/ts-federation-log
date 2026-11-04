@@ -7,6 +7,9 @@
 #      (log_and_push_sessions.sh)
 #   3. private: rebuild local/ledger.jsonl, local/summary.json and the
 #      Dashboard row files in local/dashboard/ (never committed)
+#   4. multitenant: encrypt this machine's closed days to tenants/ (sync.js
+#      push); on the dashboard owner's machine, decrypt and merge everyone's
+#      days into local/dashboard/facts.csv + sessions.csv (sync.js collect)
 #
 # Identity: TS_FED_IDENTITY, else the first line of local/identity (gitignored).
 # It is hashed into user_id; it must stay the same across runs or the public
@@ -32,5 +35,19 @@ if ! git pull --rebase --autostash -q origin main; then
   echo "warn: pull failed; the helper rebases again before pushing."
 fi
 
-bash .claude/skills/log-session-usage/scripts/log_and_push_sessions.sh "$REPO"
 node session-usage.js ledger --top=0
+
+# Encrypted private detail for the dashboard owner (closed days only; staged
+# here, committed by the helper together with the public rows).
+if [ -f local/tenant.json ]; then
+  node sync.js push
+  T=$(node -e "const t=require('./local/tenant.json');console.log(t.tenant+'/'+t.machine)")
+  if [ -d "tenants/$T" ]; then git add "tenants/$T"; fi
+fi
+
+bash .claude/skills/log-session-usage/scripts/log_and_push_sessions.sh "$REPO"
+
+# Only the dashboard owner holds the private key: merge everyone's days.
+if [ -f local/recipient.key.pem ] && [ -f local/tenant.json ]; then
+  node sync.js collect
+fi
