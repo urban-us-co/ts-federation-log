@@ -5,6 +5,9 @@ const { execFileSync } = require('child_process');
 const { anonId, scrubEmail } = require('./lib');
 
 const DEFAULT_PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
+// Cowork sessions keep their own transcript tree per session:
+// <root>/<account-uuid>/<org-uuid>/<session>/.claude/projects/**/*.jsonl
+const DEFAULT_COWORK_DIR = path.join(os.homedir(), 'Library', 'Application Support', 'Claude', 'local-agent-mode-sessions');
 const PRICING = [
   { prefix: 'claude-opus-4', input: 15, output: 75 },
   { prefix: 'claude-sonnet-4', input: 3, output: 15 },
@@ -13,11 +16,40 @@ const PRICING = [
   { prefix: 'claude-fable-5', input: 10, output: 50 },
 ];
 
-function readJsonl(file) {
+// Streams the file in chunks instead of readFileSync(...,'utf8'): real transcripts
+// reach ~700MB, past V8's max string length (ERR_STRING_TOO_LONG). Lines are
+// filtered as Buffers by `keep` (a byte marker) so huge non-matching lines (tool
+// results, images) are never decoded.
+const CHUNK = 1 << 20;
+function readJsonl(file, keep = null) {
   const out = [];
-  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
-    if (!line.trim()) continue;
+  const marker = keep ? Buffer.from(keep) : null;
+  const take = (buf) => {
+    if (!buf.length || (marker && buf.indexOf(marker) === -1)) return;
+    const line = buf.toString('utf8');
+    if (!line.trim()) return;
     try { out.push(JSON.parse(line)); } catch { /* skip corrupt transcript lines */ }
+  };
+  const fd = fs.openSync(file, 'r');
+  try {
+    let pending = [];
+    const chunk = Buffer.allocUnsafe(CHUNK);
+    let n;
+    while ((n = fs.readSync(fd, chunk, 0, CHUNK, null)) > 0) {
+      let start = 0;
+      let nl;
+      const view = chunk.subarray(0, n);
+      while ((nl = view.indexOf(10, start)) !== -1) {
+        const part = view.subarray(start, nl);
+        take(pending.length ? Buffer.concat([...pending, part]) : part);
+        pending = [];
+        start = nl + 1;
+      }
+      if (start < n) pending.push(Buffer.from(view.subarray(start)));
+    }
+    if (pending.length) take(Buffer.concat(pending));
+  } finally {
+    fs.closeSync(fd);
   }
   return out;
 }
@@ -79,9 +111,33 @@ function transcriptKind(file) {
   };
 }
 
+// Cowork path parts: the account/org UUIDs are the only local signal of WHICH
+// Cowork account did the work (needed to compare accounts / move work between them).
+function coworkOrigin(file, coworkRoot) {
+  if (!coworkRoot) return {};
+  const rel = path.relative(coworkRoot, file).split(path.sep);
+  if (rel.length < 4 || rel[0] === '..') return {};
+  return { account_uuid: rel[0], org_uuid: rel[1], cowork_session: rel[2] };
+}
+
+// quotaLimits is stamped only on turns where a limit state was reported; keep the
+// event, not the payload (upgradePaths etc. are noise).
+function quotaEvent(rows) {
+  const q = first(rows.map((r) => r.quotaLimits));
+  if (!q) return null;
+  return {
+    status: q.status ?? null,
+    rate_limit_type: q.rateLimitType ?? null,
+    resets_at: q.resetsAt ?? null,
+    is_using_overage: q.isUsingOverage ?? null,
+    overage_status: q.overageStatus ?? null,
+  };
+}
+
 function turnFromGroup(requestId, rows, kind) {
   const messages = rows.map((r) => r.message || {});
   const usage = first(messages.map((m) => m.usage)) || {};
+  const serverTools = usage.server_tool_use || {};
   const tools = new Set();
   for (const message of messages) {
     for (const block of contentBlocks(message)) {
@@ -109,13 +165,26 @@ function turnFromGroup(requestId, rows, kind) {
     attribution_mcp_tool: first(rows.map((r) => r.attributionMcpTool)),
     tool_names: [...tools].sort(),
     ...usageTokens(usage),
+    // Fields below are additive (2026-11 revival) — used by the private ledger
+    // and offload scoring; the public rollup ignores them.
+    source: kind.source || 'claude-code',
+    account_uuid: kind.account_uuid || null,
+    org_uuid: kind.org_uuid || null,
+    effort: first(rows.map((r) => r.effort)),
+    requested_model: first(rows.map((r) => r.requestedModel)),
+    advisor_model: first(rows.map((r) => r.advisorModel)),
+    service_tier: usage.service_tier || null,
+    web_search_requests: serverTools.web_search_requests || 0,
+    web_fetch_requests: serverTools.web_fetch_requests || 0,
+    is_api_error: rows.some((r) => r.isApiErrorMessage === true),
+    quota: quotaEvent(rows),
   };
 }
 
-function parseTranscript(file) {
-  const kind = transcriptKind(file);
+function parseTranscript(file, origin = {}) {
+  const kind = { ...transcriptKind(file), ...origin };
   const groups = new Map();
-  for (const row of readJsonl(file)) {
+  for (const row of readJsonl(file, '"assistant"')) {
     if (!row || row.type !== 'assistant') continue;
     const requestId = row.requestId || (row.message && row.message.id) || row.uuid;
     if (!requestId) continue;
@@ -125,11 +194,49 @@ function parseTranscript(file) {
   return [...groups.entries()].map(([requestId, rows]) => turnFromGroup(requestId, rows, kind));
 }
 
+function byTime(a, b) {
+  return String(a.timestamp).localeCompare(String(b.timestamp)) || a.request_id.localeCompare(b.request_id);
+}
+
 function scanTranscripts(root = process.env.TS_PROJECTS_DIR || DEFAULT_PROJECTS_DIR) {
   return listFiles(root, (file) => file.endsWith('.jsonl') && !file.endsWith('.meta.json'))
-    .flatMap(parseTranscript)
+    .flatMap((file) => parseTranscript(file))
     .map((turn) => ({ ...turn, cost_usd: priceUSD(turn) }))
-    .sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)) || a.request_id.localeCompare(b.request_id));
+    .sort(byTime);
+}
+
+// Walk only <acct>/<org>/<session>/.claude/projects — the Cowork root also holds
+// GBs of outputs/uploads and an audit.jsonl per session that are NOT transcripts.
+function coworkTranscriptFiles(root) {
+  const out = [];
+  const dirs = (d) => (fs.existsSync(d) ? fs.readdirSync(d).filter((n) => {
+    try { return fs.statSync(path.join(d, n)).isDirectory(); } catch { return false; }
+  }) : []);
+  for (const acct of dirs(root)) {
+    for (const org of dirs(path.join(root, acct))) {
+      for (const session of dirs(path.join(root, acct, org))) {
+        const projects = path.join(root, acct, org, session, '.claude', 'projects');
+        out.push(...listFiles(projects, (file) => file.endsWith('.jsonl')));
+      }
+    }
+  }
+  return out;
+}
+
+function scanCowork(root = process.env.TS_COWORK_DIR || DEFAULT_COWORK_DIR) {
+  return coworkTranscriptFiles(root)
+    .flatMap((file) => parseTranscript(file, { source: 'cowork', ...coworkOrigin(file, root) }))
+    .map((turn) => ({ ...turn, cost_usd: priceUSD(turn) }))
+    .sort(byTime);
+}
+
+// All local sources. An explicit TS_PROJECTS_DIR without TS_COWORK_DIR means
+// "scan only that tree" — keeps tests and ad-hoc runs from touching real Cowork data.
+function scanAllSources(env = process.env) {
+  const turns = scanTranscripts(env.TS_PROJECTS_DIR || DEFAULT_PROJECTS_DIR);
+  const coworkRoot = env.TS_COWORK_DIR || (env.TS_PROJECTS_DIR ? null : DEFAULT_COWORK_DIR);
+  if (coworkRoot && env.TS_COWORK_DIR !== 'off') turns.push(...scanCowork(coworkRoot));
+  return turns.sort(byTime);
 }
 
 function resolveIdentity() {
@@ -269,6 +376,8 @@ function validateRows(rows) {
 module.exports = {
   PRICING,
   scanTranscripts,
+  scanCowork,
+  scanAllSources,
   resolveIdentity,
   priceUSD,
   redactLabel,

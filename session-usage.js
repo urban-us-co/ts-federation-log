@@ -5,7 +5,7 @@ const {
   categorize,
   publicDedupeKey,
   rollupClosedHours,
-  scanTranscripts,
+  scanAllSources,
   validateRows,
 } = require('./session-lib');
 
@@ -29,6 +29,10 @@ function groupKey(turn, by) {
   if (by === 'mcp') return cat.category === 'mcp' ? cat.label : cat.category;
   if (by === 'model') return turn.model || 'unknown';
   if (by === 'session') return turn.session_id || 'unknown';
+  if (by === 'source') return turn.source || 'claude-code';
+  if (by === 'account') {
+    return turn.account_uuid ? `cowork:${turn.account_uuid.slice(0, 8)}/${(turn.org_uuid || '').slice(0, 8)}` : (turn.source || 'claude-code');
+  }
   return cat.label || cat.category;
 }
 
@@ -38,7 +42,7 @@ function fmtMoney(v) {
 
 function report(opts) {
   const by = opts.by || 'skill';
-  const turns = scanTranscripts();
+  const turns = scanAllSources();
   const groups = new Map();
   for (const turn of turns) {
     const key = groupKey(turn, by);
@@ -76,7 +80,7 @@ function importRows() {
   const existing = readRows(logFile);
   const seen = new Set(existing.map(publicDedupeKey));
   const now = process.env.SESSION_USAGE_NOW ? new Date(process.env.SESSION_USAGE_NOW) : new Date();
-  const rows = rollupClosedHours(scanTranscripts(), now);
+  const rows = rollupClosedHours(scanAllSources(), now);
   const violations = validateRows(rows);
   if (violations.length) {
     console.error(`Validation failed for ${violations.length} row(s).`);
