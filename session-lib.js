@@ -8,12 +8,33 @@ const DEFAULT_PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
 // Cowork sessions keep their own transcript tree per session:
 // <root>/<account-uuid>/<org-uuid>/<session>/.claude/projects/**/*.jsonl
 const DEFAULT_COWORK_DIR = path.join(os.homedir(), 'Library', 'Application Support', 'Claude', 'local-agent-mode-sessions');
+// USD per million tokens, API list price. Source: platform.claude.com/docs/en/about-claude/pricing
+// (verified 2026-11-04). First matching prefix wins, so specific ids come before
+// family prefixes. Rows without cw5m/cw1h/cr use the classic multipliers
+// (1.25× / 2× / 0.1× input); newer models publish their own cache rates, which
+// break that ratio (e.g. Fable 5.1 cache-read is 0.025× input), so they're explicit.
+// `over` = long-prompt tier (prompt = input + cache read + cache write > `at` tokens).
+// On a subscription seat this is "what it would cost on the API", not cash.
 const PRICING = [
-  { prefix: 'claude-opus-4', input: 15, output: 75 },
+  { prefix: 'claude-fable-5-1', input: 10, output: 50, cw5m: 12.5, cw1h: 20, cr: 0.25 },
+  { prefix: 'claude-fable-5', input: 10, output: 50, cw5m: 12.5, cw1h: 20, cr: 1 },
+  { prefix: 'claude-mythos-5-1', input: 10, output: 50, cw5m: 12.5, cw1h: 20, cr: 0.25 },
+  { prefix: 'claude-mythos-5', input: 10, output: 50, cw5m: 12.5, cw1h: 20, cr: 1 },
+  { prefix: 'claude-opus-5-5', input: 4, output: 20, cw5m: 5, cw1h: 8, cr: 0.2 },
+  { prefix: 'claude-opus-5', input: 5, output: 25, cw5m: 6.25, cw1h: 10, cr: 0.5 },
+  { prefix: 'claude-opus-4-8', input: 5, output: 25 },
+  { prefix: 'claude-opus-4-7', input: 5, output: 25 },
+  { prefix: 'claude-opus-4-6', input: 5, output: 25 },
+  { prefix: 'claude-opus-4-5', input: 5, output: 25 },
+  { prefix: 'claude-opus-4', input: 15, output: 75 }, // Opus 4 / 4.1
+  { prefix: 'claude-sonnet-5-5', input: 2, output: 10, cw5m: 2.5, cw1h: 4, cr: 0.1 },
+  { prefix: 'claude-sonnet-5', input: 2, output: 10, cw5m: 2.5, cw1h: 4, cr: 0.2 },
   { prefix: 'claude-sonnet-4', input: 3, output: 15 },
-  { prefix: 'claude-sonnet-5', input: 3, output: 15 },
+  {
+    prefix: 'claude-haiku-5', input: 0.1, output: 0.5, cw5m: 0.125, cw1h: 0.2, cr: 0.01,
+    over: { at: 100_000, input: 0.5, output: 2.5, cw5m: 0.625, cw1h: 1, cr: 0.05 },
+  },
   { prefix: 'claude-haiku-4', input: 1, output: 5 },
-  { prefix: 'claude-fable-5', input: 10, output: 50 },
 ];
 
 // Streams the file in chunks instead of readFileSync(...,'utf8'): real transcripts
@@ -174,6 +195,8 @@ function turnFromGroup(requestId, rows, kind) {
     requested_model: first(rows.map((r) => r.requestedModel)),
     advisor_model: first(rows.map((r) => r.advisorModel)),
     service_tier: usage.service_tier || null,
+    speed: usage.speed || null, // fast mode is priced higher; recorded, not yet priced
+    inference_geo: usage.inference_geo || null, // US-only inference is 1.1×; recorded, not yet priced
     web_search_requests: serverTools.web_search_requests || 0,
     web_fetch_requests: serverTools.web_fetch_requests || 0,
     is_api_error: rows.some((r) => r.isApiErrorMessage === true),
@@ -260,12 +283,15 @@ function priceUSD(turn) {
       (turn.cache_creation_1h_tokens || 0);
     return billable === 0 ? 0 : null;
   }
+  const prompt = (turn.input_tokens || 0) + (turn.cache_read_tokens || 0) +
+    (turn.cache_creation_5m_tokens || 0) + (turn.cache_creation_1h_tokens || 0);
+  const p = price.over && prompt > price.over.at ? price.over : price;
   const total =
-    (turn.input_tokens || 0) * price.input +
-    (turn.output_tokens || 0) * price.output +
-    (turn.cache_read_tokens || 0) * 0.1 * price.input +
-    (turn.cache_creation_5m_tokens || 0) * 1.25 * price.input +
-    (turn.cache_creation_1h_tokens || 0) * 2 * price.input;
+    (turn.input_tokens || 0) * p.input +
+    (turn.output_tokens || 0) * p.output +
+    (turn.cache_read_tokens || 0) * (p.cr ?? 0.1 * p.input) +
+    (turn.cache_creation_5m_tokens || 0) * (p.cw5m ?? 1.25 * p.input) +
+    (turn.cache_creation_1h_tokens || 0) * (p.cw1h ?? 2 * p.input);
   return total / 1e6;
 }
 
